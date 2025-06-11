@@ -570,6 +570,8 @@ heroismResetButton:SetScript("OnClick", function()
     heroismCaster = ""
     heroismButton:Enable()
     heroismUserText:SetText("")
+    heroismCastBar:Hide()
+    heroismCDBar:Hide()
     print("Heroism timer has been reset.")
 end)
 
@@ -582,6 +584,8 @@ local function OnChatMsgSystem(self, event, msg)
         heroismCaster = ""
         heroismButton:Enable()
         heroismUserText:SetText("")
+        heroismCastBar:Hide()
+        heroismCDBar:Hide()
     end
 end
 
