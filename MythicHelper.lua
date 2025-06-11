@@ -33,7 +33,7 @@ inputFrame:SetAllPoints(frame)
 
 local inputLabel = inputFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 inputLabel:SetPoint("TOP", inputFrame, "TOP", 0, -22)
-inputLabel:SetText("Charname with the highest Aura Ranks:")
+inputLabel:SetText("Character name with the highest Aura Ranks:")
 
 local inputBox = CreateFrame("EditBox", nil, inputFrame, "InputBoxTemplate")
 inputBox:SetSize(120, 18)
@@ -48,25 +48,40 @@ confirmButton:SetSize(60, 18)
 confirmButton:SetText("OK")
 confirmButton:SetScript("OnClick", function()
     local name = inputBox:GetText()
-    if name and name ~= "" then
+    -- Allow letters including German umlauts and ß
+    if name and name ~= "" and name:match("^[A-Za-zÄÖÜäöüß]+$") then
         buffTarget = name
         inputFrame:Hide()
-        -- Nach Eingabe: Frame vergrößern und Haupt-UI zeigen
-        frame:SetSize(90, 18 + 9 * 46) -- Passe Höhe an Anzahl Buttons an
+        frame:SetSize(90, 18 + 9 * 46)
         mainUI:Show()
+        AdjustFrameHeight()
+        UpdateMainName()
     else
         print("Please enter a valid name!")
+        inputBox:SetText("")
+        inputBox:SetFocus()
     end
-end)
-
-inputBox:SetScript("OnEnterPressed", function(self)
-    confirmButton:Click()
 end)
 
 -- Haupt-UI (wird erst nach Eingabe angezeigt)
 mainUI = CreateFrame("Frame", nil, frame)
 mainUI:SetAllPoints(frame)
 mainUI:Hide()
+
+-- Passe das Frame an die neue Höhe an
+
+local buttonWidth, buttonHeight, buttonSpacing = 70, 44, 6
+local colSpacing = 10
+
+
+local function AdjustFrameHeight()
+    if mainUI:IsShown() then
+        local totalHeight = 28 + 4*(buttonHeight+buttonSpacing) + 8 + 18 + buttonHeight + 8 + 12 + 2 + 8 + 36
+        frame:SetHeight(totalHeight)
+    else
+        frame:SetHeight(80) -- Höhe für Eingabefenster
+    end
+end
 
 -- Trenner-Funktion
 local function CreateDivider(parent, y)
@@ -77,9 +92,12 @@ local function CreateDivider(parent, y)
     return line
 end
 
--- 2-Spalten-Layout für Auren
-local buttonWidth, buttonHeight, buttonSpacing = 70, 44, 6
-local colSpacing = 10
+-- Überschrift über die Auren
+local aurasHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+aurasHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16, -8)
+aurasHeader:SetText("Mythic Auras")
+
+-- 2-Spalten-Layout für Auren (Passe Y-Offset an, damit Buttons unter der Überschrift starten)
 local auren = {
     { name = "Mythic Aura of Resistance", icon = "Interface\\Icons\\ability_druid_naturalperfection" },
     { name = "Mythic Aura of Shielding", icon = "Interface\\Icons\\achievement_dungeon_ulduarraid_misc_04" },
@@ -113,9 +131,9 @@ for i, aura in ipairs(auren) do
     btn:SetScript("OnClick", function()
         if buffTarget then
             SendChatMessage("cast "..aura.name, "WHISPER", nil, buffTarget)
-            print("Aura-Anfrage '"..aura.name.."' an "..buffTarget.." gesendet.")
+            print("Aura buff '"..aura.name.."' sent to "..buffTarget..".")
         else
-            print("No Target selected!")
+            print("No target selected!")
         end
     end)
     auraButtons[i] = btn
@@ -147,11 +165,38 @@ heroismButton.text:SetPoint("TOP", heroismButton.icon, "BOTTOM", 0, -1)
 heroismButton.text:SetText("Heroism")
 heroismButton.text:SetTextColor(1, 0.82, 0)
 
--- Potion Button
+-- Balken unter den Text platzieren:
+local barWidth, barHeight = 28, 8
+
+local heroismCDBar = CreateFrame("StatusBar", nil, heroismButton)
+heroismCDBar:SetSize(barWidth, barHeight)
+heroismCDBar:SetPoint("TOP", heroismButton.text, "BOTTOM", 0, -2) -- <- jetzt unter dem Namen
+heroismCDBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+heroismCDBar:SetStatusBarColor(1, 0, 0) -- Rot für CD
+heroismCDBar:SetMinMaxValues(0, 600)
+heroismCDBar:Hide()
+
+local heroismCastBar = CreateFrame("StatusBar", nil, heroismButton)
+heroismCastBar:SetSize(barWidth, barHeight)
+heroismCastBar:SetPoint("TOP", heroismButton.text, "BOTTOM", 0, -2) -- <- jetzt unter dem Namen
+heroismCastBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+heroismCastBar:SetStatusBarColor(0, 1, 0) -- Grün für Laufzeit
+heroismCastBar:SetMinMaxValues(0, 60)
+heroismCastBar:Hide()
+
+local heroismUserText = heroismButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+heroismUserText:SetPoint("TOP", heroismCDBar, "BOTTOM", 0, -2)
+heroismUserText:SetText("")
+
+local heroismCasterText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+heroismCasterText:SetPoint("LEFT", heroismCDBar, "LEFT", 2, 0)
+heroismCasterText:SetText("")
+
+-- Potion Button (direkt nach Heroism Button und vor den Potion-Balken)
 local potionIconPath = "Interface\\Icons\\inv_potion_153"
 local potionButton = CreateFrame("Button", nil, mainUI)
 potionButton:SetSize(buttonWidth, buttonHeight)
-potionButton:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16+buttonWidth+colSpacing, dividerY - 38)
+potionButton:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + buttonWidth + colSpacing, dividerY - 38)
 
 potionButton.icon = potionButton:CreateTexture(nil, "ARTWORK")
 potionButton.icon:SetSize(28, 28)
@@ -163,39 +208,22 @@ potionButton.text:SetPoint("TOP", potionButton.icon, "BOTTOM", 0, -1)
 potionButton.text:SetText("Potion")
 potionButton.text:SetTextColor(1, 0.82, 0)
 
--- Timer-Balken für Heroism (10min CD, 1min Laufzeit)
-local heroismCDBar = CreateFrame("StatusBar", nil, mainUI)
-heroismCDBar:SetSize(150, 12)
-heroismCDBar:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16, dividerY - 38 - buttonHeight - 8)
-heroismCDBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-heroismCDBar:SetMinMaxValues(0, 600)
-heroismCDBar:Hide()
+-- Timer-Balken für Potion (3min CD, 1min Laufzeit) – jetzt wie das Icon und unter dem Namen
+local potionBarWidth, potionBarHeight = 28, 8
 
-local heroismCastBar = CreateFrame("StatusBar", nil, mainUI)
-heroismCastBar:SetSize(150, 8)
-heroismCastBar:SetPoint("TOPLEFT", heroismCDBar, "BOTTOMLEFT", 0, -2)
-heroismCastBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-heroismCastBar:SetStatusBarColor(0, 0.8, 1)
-heroismCastBar:SetMinMaxValues(0, 60)
-heroismCastBar:Hide()
-
-local heroismCasterText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-heroismCasterText:SetPoint("LEFT", heroismCDBar, "LEFT", 2, 0)
-heroismCasterText:SetText("")
-
--- Timer-Balken für Potion (3min CD, 1min Laufzeit)
-local potionCDBar = CreateFrame("StatusBar", nil, mainUI)
-potionCDBar:SetSize(150, 12)
-potionCDBar:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16, dividerY - 38 - buttonHeight - 36)
+local potionCDBar = CreateFrame("StatusBar", nil, potionButton)
+potionCDBar:SetSize(potionBarWidth, potionBarHeight)
+potionCDBar:SetPoint("TOP", potionButton.text, "BOTTOM", 0, -2)
 potionCDBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+potionCDBar:SetStatusBarColor(1, 0, 0) -- Rot für CD
 potionCDBar:SetMinMaxValues(0, 180)
 potionCDBar:Hide()
 
-local potionCastBar = CreateFrame("StatusBar", nil, mainUI)
-potionCastBar:SetSize(150, 8)
-potionCastBar:SetPoint("TOPLEFT", potionCDBar, "BOTTOMLEFT", 0, -2)
+local potionCastBar = CreateFrame("StatusBar", nil, potionButton)
+potionCastBar:SetSize(potionBarWidth, potionBarHeight)
+potionCastBar:SetPoint("TOP", potionButton.text, "BOTTOM", 0, -2)
 potionCastBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-potionCastBar:SetStatusBarColor(0.2, 1, 0.2)
+potionCastBar:SetStatusBarColor(0, 1, 0) -- Grün für Laufzeit
 potionCastBar:SetMinMaxValues(0, 60)
 potionCastBar:Hide()
 
@@ -203,38 +231,134 @@ local potionCasterText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal
 potionCasterText:SetPoint("LEFT", potionCDBar, "LEFT", 2, 0)
 potionCasterText:SetText("")
 
+-- Utility Buttons: 3rd column (right of Potion)
+local utilityButtons = {
+    {
+        name = "No Rest",
+        icon = "Interface\\Icons\\inv_drink_24_sealwhey",
+        message = "nc -food"
+    },
+    {
+        name = "No Loot",
+        icon = "Interface\\Icons\\inv_misc_bag_11",
+        message = "nc -loot"
+    },
+    {
+        name = "Don't Avoid AoE",
+        icon = "Interface\\Icons\\ability_rogue_quickrecovery",
+        message = "co -avoid aoe"
+    },
+    {
+        name = "Flask",
+        icon = "Interface\\Icons\\inv_alchemy_endlessflask_05",
+        message = "u flask of the north"
+    }
+}
+
+-- Überschrift für die dritte Spalte (Bot Utilities) auf gleiche Höhe wie Auren
+local botUtilsHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+botUtilsHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), -8)
+botUtilsHeader:SetText("Bot Utilities")
+
+-- Utility Buttons: Starten auf gleicher Höhe wie die Auren
+for i, btnData in ipairs(utilityButtons) do
+    local btn = CreateFrame("Button", nil, mainUI)
+    btn:SetSize(buttonWidth, buttonHeight)
+    btn:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), -28 - (i-1)*(buttonHeight+buttonSpacing))
+
+    btn.icon = btn:CreateTexture(nil, "ARTWORK")
+    btn.icon:SetSize(28, 28)
+    btn.icon:SetPoint("TOP", btn, "TOP", 0, -2)
+    btn.icon:SetTexture(btnData.icon)
+
+    btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    btn.text:SetPoint("TOP", btn.icon, "BOTTOM", 0, -1)
+    btn.text:SetText(btnData.name)
+    btn.text:SetTextColor(1, 0.82, 0)
+
+    btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    btn:SetScript("OnClick", function()
+        if GetNumRaidMembers() > 0 then
+            SendChatMessage(btnData.message, "RAID")
+        elseif GetNumPartyMembers() > 0 then
+            SendChatMessage(btnData.message, "PARTY")
+        end
+    end)
+end
+
 -- Nach dem Erstellen aller Buttons und Balken:
 mainUI:Show()
 mainUI:SetScript("OnShow", function()
-    -- Automatische Rahmenhöhe berechnen
-    local totalHeight = 28 + 4*(buttonHeight+buttonSpacing) + 8 + 18 + buttonHeight + 8 + 12 + 2 + 8 + 36
-    frame:SetHeight(totalHeight)
+    AdjustFrameHeight()
 end)
 
 -- Timer-Logik
 local heroismCastEnd, heroismCaster = 0, ""
 local potionCD, potionCastEnd, potionCaster = 0, 0, ""
+local potionCDPending = false
+
+-- Heroism-Queue-Logik
+local heroismQueue = {}
+local heroismQueueIndex = 1
+
+local function FillHeroismQueue()
+    wipe(heroismQueue)
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name = select(1, GetRaidRosterInfo(i))
+            if type(name) == "string" and name ~= "" then
+                table.insert(heroismQueue, name)
+            end
+        end
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local name = UnitName("party"..i)
+            if type(name) == "string" and name ~= "" and name ~= UnitName("player") then
+                table.insert(heroismQueue, name)
+            end
+        end
+        -- Nur hinzufügen, wenn du nicht schon in der Liste bist
+        local playerName = UnitName("player")
+        local alreadyInQueue = false
+        for _, n in ipairs(heroismQueue) do
+            if n == playerName then alreadyInQueue = true break end
+        end
+        if not alreadyInQueue then
+            table.insert(heroismQueue, playerName)
+        end
+    else
+        table.insert(heroismQueue, UnitName("player"))
+    end
+    heroismQueueIndex = 1
+end
 
 local function UpdateBars()
     local now = GetTime()
     -- Heroism
     if heroismCastEnd > now then
-        heroismButton:Disable()
+        -- Laufzeit läuft (grüner Balken)
         heroismCastBar:Show()
+        heroismCastBar:SetMinMaxValues(0, 60)
         heroismCastBar:SetValue(heroismCastEnd - now)
-    else
-        heroismButton:Enable()
-        heroismCastBar:Hide()
-    end
-    -- Heroism CD-Balken bleibt als Info sichtbar
-    if heroismCaster ~= "" and heroismCastEnd + 540 > now then
         heroismCDBar:Show()
         heroismCDBar:SetMinMaxValues(0, 600)
         heroismCDBar:SetValue(heroismCastEnd + 600 - now)
-        heroismCasterText:SetText(heroismCaster)
+        heroismButton:Disable()
+        heroismUserText:SetText("Heroism: "..heroismCaster)
+    elseif heroismCaster ~= "" and heroismCastEnd + 600 > now then
+        -- Cooldown läuft (roter Balken)
+        heroismCastBar:Hide()
+        heroismCDBar:Show()
+        heroismCDBar:SetMinMaxValues(0, 600)
+        heroismCDBar:SetValue(heroismCastEnd + 600 - now)
+        heroismButton:Enable()
+        heroismUserText:SetText("Heroism: "..heroismCaster)
     else
+        -- Kein Balken
+        heroismCastBar:Hide()
         heroismCDBar:Hide()
-        heroismCasterText:SetText("")
+        heroismButton:Enable()
+        heroismUserText:SetText("")
     end
     -- Potion
     if potionCD > now then
@@ -258,43 +382,139 @@ end
 mainUI:SetScript("OnUpdate", UpdateBars)
 
 heroismButton:SetScript("OnClick", function()
-    if buffTarget then
-        -- Anfrage senden
-        SendChatMessage("cast "..heroismSpell, "WHISPER", nil, buffTarget)
-        print("Heroism-Anfrage an "..buffTarget.." gesendet.")
-        -- Timer starten
-        heroismCastEnd = GetTime() + 60 -- 1min Laufzeit
-        heroismCaster = buffTarget
-    else
-        print("Kein Ziel ausgewählt!")
+    if #heroismQueue == 0 then FillHeroismQueue() end
+    local nextUser = heroismQueue[heroismQueueIndex]
+    if nextUser then
+        SendChatMessage("cast "..heroismSpell, "WHISPER", nil, nextUser)
+        print("Heroism sent to "..nextUser..".")
+        heroismCastEnd = GetTime() + 60 -- 1min duration
+        heroismCaster = nextUser
+        heroismUserText:SetText("Heroism: "..nextUser)
+        heroismButton:Disable()
+        -- Sofort zum nächsten Spieler in der Queue wechseln
+        heroismQueueIndex = heroismQueueIndex + 1
+        if heroismQueueIndex > #heroismQueue then heroismQueueIndex = 1 end
     end
 end)
 
 potionButton:SetScript("OnClick", function()
-    if buffTarget then
-        -- Anfrage senden
-        SendChatMessage("use Potion", "WHISPER", nil, buffTarget)
-        print("Potion-Anfrage an "..buffTarget.." gesendet.")
-        -- Timer starten
-        potionCD = GetTime() + 180 -- 3min CD
-        potionCastEnd = GetTime() + 60 -- 1min Laufzeit
-        potionCaster = buffTarget
+    local sent = false
+    if GetNumRaidMembers() > 0 then
+        SendChatMessage("u Mythic Endless Assault Potion", "RAID")
+        sent = true
+    elseif GetNumPartyMembers() > 0 then
+        SendChatMessage("u Mythic Endless Assault Potion", "PARTY")
+        sent = true
+    end
+    if sent then
+        print("Potion request sent to your group.")
+        potionCastEnd = GetTime() + 60
+        potionCDPending = true
     else
-        print("Kein Ziel ausgewählt!")
+        print("No group found!")
     end
 end)
 
--- Passe das Frame an die neue Höhe an
-frame:SetSize(2*buttonWidth+colSpacing+32, math.abs(dividerY - 38 - buttonHeight - 36 - 60))
+-- Überprüfen, ob das Addon geladen werden soll
+local function CanLoadMythicHelper()
+    local inInstance, instanceType = IsInInstance()
+    local raidMembers = GetNumRaidMembers()
+    local partyMembers = GetNumPartyMembers()
+    local groupSize = (raidMembers > 0 and raidMembers) or (partyMembers + 1) -- +1 für den Spieler selbst
 
--- Fenster beim Laden verstecken
+    return inInstance and (instanceType == "party" or instanceType == "raid") and groupSize > 1
+end
+
+-- Ereignis-Handler für Instanzwechsel
+local function OnEvent(self, event, ...)
+    if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+        if CanLoadMythicHelper() then
+            frame:Show()
+            inputFrame:Show()
+            mainUI:Hide()
+            AdjustFrameHeight()
+            print("|cff55ff55MythicHelper: Addon loaded!|r")
+        else
+            frame:Hide()
+            print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
+        end
+    end
+end
+
+-- Frame für Ereignisse registrieren
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+eventFrame:SetScript("OnEvent", OnEvent)
+
+-- Initialer Check beim Laden des Addons
+if CanLoadMythicHelper() then
+    frame:Show()
+    inputFrame:Show()
+    mainUI:Hide()
+    AdjustFrameHeight()
+    print("|cff55ff55MythicHelper: Addon loaded!|r")
+else
+    frame:Hide()
+    print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
+end
+
 frame:Hide()
+inputFrame:Show()
+mainUI:Hide()
+
+-- Passe das Frame an die neue Höhe an
+local function AdjustFrameHeight()
+    if mainUI:IsShown() then
+        local totalHeight = 28 + 4*(buttonHeight+buttonSpacing) + 8 + 18 + buttonHeight + 8 + 12 + 2 + 8 + 36
+        frame:SetHeight(totalHeight)
+    else
+        frame:SetHeight(80) -- Höhe für Eingabefenster
+    end
+end
+
+-- Main-Name-Anzeige ganz unten mittig
+local mainNameText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+mainNameText:SetPoint("BOTTOM", mainUI, "BOTTOM", 0, 8)
+mainNameText:SetText("")
+
+-- Funktion zum Aktualisieren des Main-Namens
+local function UpdateMainName()
+    if buffTarget and buffTarget ~= "" then
+        mainNameText:SetText("Main: " .. buffTarget)
+        mainNameText:Show()
+    else
+        mainNameText:SetText("")
+        mainNameText:Hide()
+    end
+end
+
+-- ... jetzt erst confirmButton:SetScript(...), wo UpdateMainName() aufgerufen wird ...
+confirmButton:SetScript("OnClick", function()
+    local name = inputBox:GetText()
+    -- Erlaubt Buchstaben inkl. deutscher Umlaute und ß
+    if name and name ~= "" and name:match("^[A-Za-zÄÖÜäöüß]+$") then
+        buffTarget = name
+        inputFrame:Hide()
+        mainUI:Show()
+        AdjustFrameHeight()
+        UpdateMainName()
+    else
+        print("Please Enter a valid Name!")
+        inputBox:SetText("")
+        inputBox:SetFocus()
+    end
+end)
+
+inputBox:SetScript("OnEnterPressed", function(self)
+    confirmButton:Click()
+end)
 
 -- Slash Command: /mhelper zum Öffnen/Schließen des Addons
 SLASH_MHELPER1 = "/mhelper"
 SlashCmdList["MHELPER"] = function()
-    if not CanShowMythicHelper() then
-        print("|cffff5555MythicHelper: Nur in einer Instanzgruppe verfügbar!|r")
+    if not CanLoadMythicHelper() then
+        print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
         frame:Hide()
         return
     end
@@ -302,6 +522,7 @@ SlashCmdList["MHELPER"] = function()
         frame:Hide()
     else
         frame:Show()
+        AdjustFrameHeight() -- Höhe anpassen, wenn das Fenster geöffnet wird
     end
 end
 
@@ -314,8 +535,8 @@ minimapButton:SetNormalTexture("Interface\\AddOns\\MythicHelper\\icon")
 minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
 minimapButton:SetScript("OnClick", function()
-    if not CanShowMythicHelper() then
-        print("|cffff5555MythicHelper: Nur in einer Instanzgruppe verfügbar!|r")
+    if not CanLoadMythicHelper() then
+        print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
         frame:Hide()
         return
     end
@@ -339,4 +560,43 @@ if not minimapButton:GetNormalTexture() then
     minimapButton:SetNormalTexture("Interface\\Icons\\INV_Misc_QuestionMark")
 end
 
-frame:Show()
+-- Nach dem Heroism-Bereich, z.B. nach heroismUserText:
+local heroismResetButton = CreateFrame("Button", nil, mainUI, "GameMenuButtonTemplate")
+heroismResetButton:SetSize(60, 18)
+heroismResetButton:SetPoint("TOP", heroismUserText, "BOTTOM", 0, -4)
+heroismResetButton:SetText("Reset Heroism")
+heroismResetButton:SetScript("OnClick", function()
+    heroismCastEnd = 0
+    heroismCaster = ""
+    heroismButton:Enable()
+    heroismUserText:SetText("")
+    print("Heroism timer has been reset.")
+end)
+
+local function OnChatMsgSystem(self, event, msg)
+    if msg and msg:find("Unknown spell Mythic Heroism") then
+        heroismQueueIndex = heroismQueueIndex + 1
+        if heroismQueueIndex > #heroismQueue then heroismQueueIndex = 1 end
+        print("Mythic Heroism: Player skipped (spell not known).")
+        heroismCastEnd = 0
+        heroismCaster = ""
+        heroismButton:Enable()
+        heroismUserText:SetText("")
+    end
+end
+
+local chatEventFrame = CreateFrame("Frame")
+chatEventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+chatEventFrame:SetScript("OnEvent", OnChatMsgSystem)
+
+local function OnCombatEnd(self, event)
+    if potionCDPending then
+        potionCD = GetTime() + 180
+        potionCDPending = false
+        print("Potion cooldown starts now (after combat).")
+    end
+end
+
+local combatEventFrame = CreateFrame("Frame")
+combatEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+combatEventFrame:SetScript("OnEvent", OnCombatEnd)
