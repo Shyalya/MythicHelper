@@ -308,6 +308,7 @@ local function FillHeroismQueue()
         for i = 1, GetNumRaidMembers() do
             local name, _, subgroup = GetRaidRosterInfo(i)
             if type(name) == "string" and name ~= "" then
+                -- Hier werden ALLE Raidmitglieder (Gruppe 1-8) eingetragen!
                 table.insert(heroismQueue, name)
             end
         end
