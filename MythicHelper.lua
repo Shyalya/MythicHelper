@@ -51,6 +51,7 @@ confirmButton:SetScript("OnClick", function()
     -- Allow letters including German umlauts and ß
     if name and name ~= "" and name:match("^[A-Za-zÄÖÜäöüß]+$") then
         buffTarget = name
+        MythicHelperMainName = name -- Speichern für die Session und SavedVariables
         inputFrame:Hide()
         frame:SetSize(90, 18 + 9 * 46)
         mainUI:Show()
@@ -305,7 +306,7 @@ local function FillHeroismQueue()
     wipe(heroismQueue)
     if GetNumRaidMembers() > 0 then
         for i = 1, GetNumRaidMembers() do
-            local name = select(1, GetRaidRosterInfo(i))
+            local name, _, subgroup = GetRaidRosterInfo(i)
             if type(name) == "string" and name ~= "" then
                 table.insert(heroismQueue, name)
             end
@@ -317,7 +318,6 @@ local function FillHeroismQueue()
                 table.insert(heroismQueue, name)
             end
         end
-        -- Nur hinzufügen, wenn du nicht schon in der Liste bist
         local playerName = UnitName("player")
         local alreadyInQueue = false
         for _, n in ipairs(heroismQueue) do
@@ -354,7 +354,7 @@ local function UpdateBars()
         heroismButton:Enable()
         heroismUserText:SetText("Heroism: "..heroismCaster)
     else
-        -- Kein Balken
+        -- Kein balken
         heroismCastBar:Hide()
         heroismCDBar:Hide()
         heroismButton:Enable()
@@ -489,12 +489,29 @@ local function UpdateMainName()
     end
 end
 
--- ... jetzt erst confirmButton:SetScript(...), wo UpdateMainName() aufgerufen wird ...
+-- Ganz oben (nach den lokalen Variablen)
+if MythicHelperMainName then
+    buffTarget = MythicHelperMainName
+end
+
+-- Beim Anzeigen des Eingabefelds den gespeicherten Namen vorausfüllen:
+inputFrame:HookScript("OnShow", function()
+    if MythicHelperMainName and MythicHelperMainName ~= "" then
+        inputBox:SetText(MythicHelperMainName)
+        inputBox:HighlightText() -- optional: markiert den Text zum schnellen Überschreiben
+    else
+        inputBox:SetText("")
+    end
+    inputBox:SetFocus()
+end)
+
+-- Beim Bestätigen speichern:
 confirmButton:SetScript("OnClick", function()
     local name = inputBox:GetText()
     -- Erlaubt Buchstaben inkl. deutscher Umlaute und ß
     if name and name ~= "" and name:match("^[A-Za-zÄÖÜäöüß]+$") then
         buffTarget = name
+        MythicHelperMainName = name -- Speichern für die Session und SavedVariables
         inputFrame:Hide()
         mainUI:Show()
         AdjustFrameHeight()

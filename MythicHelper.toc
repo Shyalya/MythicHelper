@@ -3,5 +3,6 @@
 ## Notes: Ein Addon zum Buffen und Cooldown-Tracking für Mythic Gruppen
 ## Author: Shyalya
 ## Version: 0.1
+## SavedVariables: MythicHelperMainName
 
 MythicHelper.lua
