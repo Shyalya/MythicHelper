@@ -756,3 +756,68 @@ end)
 print("DEBUG: type(mhnameButtons)", type(mhnameButtons))
 print("DEBUG: type(btn)", type(btn))
 
+-- Beispielwerte, ggf. anpassen:
+local HEROISM_DURATION = 40   -- Laufzeit in Sekunden
+local HEROISM_COOLDOWN = 600  -- Cooldown in Sekunden
+
+local function StartHeroismBars()
+    -- Heroism Laufzeit-Balken (CastBar)
+    heroismCastBar:SetMinMaxValues(0, HEROISM_DURATION)
+    heroismCastBar:SetValue(0)
+    heroismCastBar:Show()
+    heroismCastBar.startTime = GetTime()
+    heroismCastBar:SetScript("OnUpdate", function(self)
+        local elapsed = GetTime() - self.startTime
+        if elapsed < HEROISM_DURATION then
+            self:SetValue(elapsed)
+        else
+            self:SetValue(HEROISM_DURATION)
+            self:Hide()
+            self:SetScript("OnUpdate", nil)
+        end
+    end)
+
+    -- Heroism Cooldown-Balken (CDBar)
+    heroismCDBar:SetMinMaxValues(0, HEROISM_COOLDOWN)
+    heroismCDBar:SetValue(0)
+    heroismCDBar:Show()
+    heroismCDBar.startTime = GetTime()
+    heroismCDBar:SetScript("OnUpdate", function(self)
+        local elapsed = GetTime() - self.startTime
+        if elapsed < HEROISM_COOLDOWN then
+            self:SetValue(elapsed)
+        else
+            self:SetValue(HEROISM_COOLDOWN)
+            self:Hide()
+            self:SetScript("OnUpdate", nil)
+            heroismButton:Enable() -- Button nach CD wieder aktivieren
+        end
+    end)
+end
+
+-- Im Heroism-Button-OnClick-Handler:
+heroismButton:SetScript("OnClick", function()
+    if #heroismQueue == 0 then FillHeroismQueue() end
+    local nextUser = heroismQueue[heroismQueueIndex]
+    if nextUser then
+        SendChatMessage("cast "..heroismSpell, "WHISPER", nil, nextUser)
+        print("Heroism sent to "..nextUser..".")
+        -- Heroism läuft jetzt NEU (immer überschreiben)
+        heroismCastEnd = GetTime() + 30 -- 30 Sekunden Laufzeit (anpassen falls nötig)
+        heroismCaster = nextUser
+        heroismUserText:SetText("Heroism: "..nextUser)
+        heroismButton:Disable()
+        StartHeroismBars()
+        -- Balken sofort neu anzeigen
+        heroismCastBar:SetMinMaxValues(0, 30)
+        heroismCastBar:SetValue(0)
+        heroismCastBar:Show()
+        heroismCDBar:SetMinMaxValues(0, 600)
+        heroismCDBar:SetValue(0)
+        heroismCDBar:Show()
+        -- Zum nächsten Spieler in der Queue wechseln
+        heroismQueueIndex = heroismQueueIndex + 1
+        if heroismQueueIndex > #heroismQueue then heroismQueueIndex = 1 end
+    end
+end)
+
