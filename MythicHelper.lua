@@ -1,6 +1,6 @@
 local addonName = ...
 local frame = CreateFrame("Frame", addonName.."Frame", UIParent)
-frame:SetSize(260, 80) -- Startgröße für Eingabefenster
+frame:SetSize(260, 400) -- Startgröße für Eingabefenster
 frame:SetPoint("CENTER")
 frame:SetMovable(true)
 frame:EnableMouse(true)
@@ -32,57 +32,139 @@ local inputFrame = CreateFrame("Frame", nil, frame)
 inputFrame:SetAllPoints(frame)
 
 local inputLabel = inputFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-inputLabel:SetPoint("TOP", inputFrame, "TOP", 0, -22)
-inputLabel:SetText("Character name with the highest Aura Ranks:")
-
-local inputBox = CreateFrame("EditBox", nil, inputFrame, "InputBoxTemplate")
-inputBox:SetSize(120, 18)
-inputBox:SetPoint("TOP", inputLabel, "BOTTOM", 0, -6)
-inputBox:SetAutoFocus(true)
-inputBox:SetMaxLetters(20)
-inputBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-local confirmButton = CreateFrame("Button", nil, inputFrame, "GameMenuButtonTemplate")
-confirmButton:SetPoint("TOP", inputBox, "BOTTOM", 0, -6)
-confirmButton:SetSize(60, 18)
-confirmButton:SetText("OK")
-confirmButton:SetScript("OnClick", function()
-    local name = inputBox:GetText()
-    -- Allow letters including German umlauts and ß
-    if name and name ~= "" and name:match("^[A-Za-zÄÖÜäöüß]+$") then
-        buffTarget = name
-        MythicHelperMainName = name -- Speichern für die Session und SavedVariables
-        inputFrame:Hide()
-        frame:SetSize(90, 18 + 9 * 46)
-        mainUI:Show()
-        AdjustFrameHeight()
-        UpdateMainName()
-    else
-        print("Please enter a valid name!")
-        inputBox:SetText("")
-        inputBox:SetFocus()
-    end
-end)
-
--- Haupt-UI (wird erst nach Eingabe angezeigt)
-mainUI = CreateFrame("Frame", nil, frame)
-mainUI:SetAllPoints(frame)
-mainUI:Hide()
+inputLabel:SetPoint("TOP", inputFrame, "TOP", 0, -38)
+inputLabel:SetText("Select Character with the highest Aura Ranks:")
 
 -- Passe das Frame an die neue Höhe an
 
 local buttonWidth, buttonHeight, buttonSpacing = 70, 44, 6
 local colSpacing = 10
 
-
 local function AdjustFrameHeight()
     if mainUI:IsShown() then
         local totalHeight = 28 + 4*(buttonHeight+buttonSpacing) + 8 + 18 + buttonHeight + 8 + 12 + 2 + 8 + 36
         frame:SetHeight(totalHeight)
+    elseif inputFrame:IsShown() then
+        frame:SetHeight(220) -- Feste Höhe für das Auswahlfenster, ggf. anpassen!
+        frame:SetWidth(360)  -- Feste Breite für das Auswahlfenster, ggf. anpassen!
     else
-        frame:SetHeight(80) -- Höhe für Eingabefenster
+        frame:SetHeight(80)
+        frame:SetWidth(260)
     end
 end
+
+-- Haupt-UI (wird erst nach Eingabe angezeigt)
+mainUI = CreateFrame("Frame", nil, frame)
+mainUI:SetAllPoints(frame)
+mainUI:Hide()
+
+-- Main-Name-Anzeige ganz unten mittig
+local mainNameText = nil
+mainNameText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+mainNameText:SetPoint("BOTTOM", mainUI, "BOTTOM", 0, 8)
+mainNameText:SetText("")
+
+-- Funktion zum Aktualisieren des Main-Namens
+local function UpdateMainName()
+    if buffTarget and buffTarget ~= "" then
+        mainNameText:SetText("Main: " .. buffTarget)
+        mainNameText:Show()
+    else
+        mainNameText:SetText("")
+        mainNameText:Hide()
+    end
+end
+
+-- Passe ShowNameButtons an:
+local mhnameButtons = {}
+local function ShowNameButtons()
+    -- Vorherige Buttons entfernen
+    for _, btn in ipairs(mhnameButtons) do
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(mhnameButtons)
+
+    -- Setze das Hauptfenster auf eine große, feste Größe für die Auswahl
+    frame:SetWidth(180)
+    frame:SetHeight(420)
+
+    -- Erstelle eine Tabelle mit 10 leeren Feldern
+    local names = {}
+    for i = 1, 10 do
+        names[i] = ""
+    end
+
+    -- Fülle die Tabelle mit den Namen der Gruppenmitglieder
+    local count = 1
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name and name ~= "" then
+                names[count] = name
+                count = count + 1
+            end
+        end
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local name = UnitName("party"..i)
+            if name and name ~= "" then
+                names[count] = name
+                count = count + 1
+            end
+        end
+        names[count] = UnitName("player")
+    elseif UnitName("player") then
+        names[count] = UnitName("player")
+    end
+
+    -- Jetzt enthält 'names' immer 10 Felder, die ersten sind ggf. mit Namen befüllt
+
+    -- Beispiel: Buttons für alle 10 Felder anlegen
+    local btnWidth, btnHeight = 120, 22
+    local btnSpacingX, btnSpacingY = 16, 6
+    local maxRows = 5 -- oder 10, je nach gewünschtem Layout
+    for i = 1, 10 do
+        local name = names[i]
+        local btn = CreateFrame("Button", nil, inputFrame, "GameMenuButtonTemplate")
+        btn:SetSize(btnWidth, btnHeight)
+        -- Passe die Positionierung ggf. an
+        local col = math.floor((i-1) / maxRows)
+        local row = (i-1) % maxRows
+        btn:SetPoint(
+            "TOPLEFT",
+            inputLabel,
+            "BOTTOMLEFT",
+            col * (btnWidth + btnSpacingX),
+            -8 - row * (btnHeight + btnSpacingY)
+        )
+        if name ~= "" then
+            btn:SetText(name)
+            btn:SetScript("OnClick", function()
+                buffTarget = name
+                MythicHelperMainName = name
+                frame:SetWidth(260)
+                frame:SetHeight(80)
+                mainUI:Show()
+                AdjustFrameHeight()
+                UpdateMainName()
+                inputFrame:Hide()
+            end)
+            btn:Enable()
+        else
+            btn:SetText("-")
+            btn:SetScript("OnClick", nil)
+            btn:Disable()
+        end
+        btn:Show()
+        table.insert(mhnameButtons, btn)
+    end
+
+    inputFrame:ClearAllPoints()
+    inputFrame:SetAllPoints(frame)
+end
+
+
 
 -- Trenner-Funktion
 local function CreateDivider(parent, y)
@@ -347,7 +429,7 @@ local function UpdateBars()
         heroismButton:Disable()
         heroismUserText:SetText("Heroism: "..heroismCaster)
     elseif heroismCaster ~= "" and heroismCastEnd + 600 > now then
-        -- Cooldown läuft (roter Balken)
+        -- Cooldown läuft (roter balken)
         heroismCastBar:Hide()
         heroismCDBar:Show()
         heroismCDBar:SetMinMaxValues(0, 600)
@@ -388,7 +470,7 @@ heroismButton:SetScript("OnClick", function()
     if nextUser then
         SendChatMessage("cast "..heroismSpell, "WHISPER", nil, nextUser)
         print("Heroism sent to "..nextUser..".")
-        heroismCastEnd = GetTime() + 60 -- 1min duration
+        heroismCastEnd = GetTime() + 30 -- 1min duration
         heroismCaster = nextUser
         heroismUserText:SetText("Heroism: "..nextUser)
         heroismButton:Disable()
@@ -410,7 +492,7 @@ potionButton:SetScript("OnClick", function()
     if sent then
         print("Potion request sent to your group.")
         potionCastEnd = GetTime() + 60
-        potionCDPending = true
+        potionCD = GetTime() + 180 -- << Cooldown startet SOFORT!
     else
         print("No group found!")
     end
@@ -469,64 +551,20 @@ local function AdjustFrameHeight()
     if mainUI:IsShown() then
         local totalHeight = 28 + 4*(buttonHeight+buttonSpacing) + 8 + 18 + buttonHeight + 8 + 12 + 2 + 8 + 36
         frame:SetHeight(totalHeight)
+    elseif inputFrame:IsShown() then
+        frame:SetHeight(220) -- Feste Höhe für das Auswahlfenster, ggf. anpassen!
+        frame:SetWidth(360)  -- Feste Breite für das Auswahlfenster, ggf. anpassen!
     else
-        frame:SetHeight(80) -- Höhe für Eingabefenster
+        frame:SetHeight(80)
+        frame:SetWidth(260)
     end
 end
 
--- Main-Name-Anzeige ganz unten mittig
-local mainNameText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-mainNameText:SetPoint("BOTTOM", mainUI, "BOTTOM", 0, 8)
-mainNameText:SetText("")
-
--- Funktion zum Aktualisieren des Main-Namens
-local function UpdateMainName()
-    if buffTarget and buffTarget ~= "" then
-        mainNameText:SetText("Main: " .. buffTarget)
-        mainNameText:Show()
-    else
-        mainNameText:SetText("")
-        mainNameText:Hide()
-    end
-end
 
 -- Ganz oben (nach den lokalen Variablen)
 if MythicHelperMainName then
     buffTarget = MythicHelperMainName
 end
-
--- Beim Anzeigen des Eingabefelds den gespeicherten Namen vorausfüllen:
-inputFrame:HookScript("OnShow", function()
-    if MythicHelperMainName and MythicHelperMainName ~= "" then
-        inputBox:SetText(MythicHelperMainName)
-        inputBox:HighlightText() -- optional: markiert den Text zum schnellen Überschreiben
-    else
-        inputBox:SetText("")
-    end
-    inputBox:SetFocus()
-end)
-
--- Beim Bestätigen speichern:
-confirmButton:SetScript("OnClick", function()
-    local name = inputBox:GetText()
-    -- Erlaubt Buchstaben inkl. deutscher Umlaute und ß
-    if name and name ~= "" and name:match("^[A-Za-zÄÖÜäöüß]+$") then
-        buffTarget = name
-        MythicHelperMainName = name -- Speichern für die Session und SavedVariables
-        inputFrame:Hide()
-        mainUI:Show()
-        AdjustFrameHeight()
-        UpdateMainName()
-    else
-        print("Please Enter a valid Name!")
-        inputBox:SetText("")
-        inputBox:SetFocus()
-    end
-end)
-
-inputBox:SetScript("OnEnterPressed", function(self)
-    confirmButton:Click()
-end)
 
 -- Slash Command: /mhelper zum Öffnen/Schließen des Addons
 SLASH_MHELPER1 = "/mhelper"
@@ -611,14 +649,103 @@ local chatEventFrame = CreateFrame("Frame")
 chatEventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 chatEventFrame:SetScript("OnEvent", OnChatMsgSystem)
 
-local function OnCombatEnd(self, event)
-    if potionCDPending then
-        potionCD = GetTime() + 180
-        potionCDPending = false
-        print("Potion cooldown starts now (after combat).")
+
+-- Zeige die Buttons immer, wenn das Eingabefeld angezeigt wird:
+inputFrame:HookScript("OnShow", function()
+    ShowNameButtons()
+    AdjustFrameHeight()
+end)
+
+-- Tabelle für die Buttons, damit wir sie später entfernen können
+mhnameButtons = mhnameButtons or {}
+
+-- Funktion zum Entfernen aller alten Buttons
+local function RemoveOldButtons()
+    for _, btn in ipairs(mhnameButtons) do
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(mhnameButtons)
+end
+
+-- Funktion zum Aktualisieren der Buttons
+function UpdateMythicHelperButtons()
+    RemoveOldButtons()
+
+    local btnWidth, btnHeight = 120, 22
+    local btnSpacingX, btnSpacingY = 16, 6
+    local maxRows = 5
+
+    -- Erstelle eine Tabelle mit 10 Feldern
+    local names = {}
+    for i = 1, 10 do names[i] = "" end
+
+    local count = 1
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name and name ~= "" then
+                names[count] = name
+                count = count + 1
+            end
+        end
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local name = UnitName("party"..i)
+            if name and name ~= "" then
+                names[count] = name
+                count = count + 1
+            end
+        end
+        names[count] = UnitName("player")
+    elseif UnitName("player") then
+        names[count] = UnitName("player")
+    end
+
+    for i = 1, 10 do
+        local name = names[i]
+        local btn = CreateFrame("Button", nil, inputFrame, "GameMenuButtonTemplate")
+        btn:SetSize(btnWidth, btnHeight)
+        local col = math.floor((i-1) / maxRows)
+        local row = (i-1) % maxRows
+        btn:SetPoint(
+            "TOPLEFT",
+            inputLabel,
+            "BOTTOMLEFT",
+            col * (btnWidth + btnSpacingX),
+            -8 - row * (btnHeight + btnSpacingY)
+        )
+        if name ~= "" then
+            btn:SetText(name)
+            btn:SetScript("OnClick", function()
+                buffTarget = name
+                MythicHelperMainName = name
+                frame:SetWidth(260)
+                frame:SetHeight(80)
+                mainUI:Show()
+                AdjustFrameHeight()
+                UpdateMainName()
+                inputFrame:Hide()
+            end)
+            btn:Enable()
+        else
+            btn:SetText("-")
+            btn:SetScript("OnClick", nil)
+            btn:Disable()
+        end
+        btn:Show()
+        table.insert(mhnameButtons, btn)
     end
 end
 
-local combatEventFrame = CreateFrame("Frame")
-combatEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-combatEventFrame:SetScript("OnEvent", OnCombatEnd)
+-- Event-Handler für Gruppenänderungen
+local f = CreateFrame("Frame")
+f:RegisterEvent("RAID_ROSTER_UPDATE")
+f:RegisterEvent("PARTY_MEMBERS_CHANGED")
+f:SetScript("OnEvent", function(self, event, ...)
+    UpdateMythicHelperButtons()
+end)
+
+print("DEBUG: type(mhnameButtons)", type(mhnameButtons))
+print("DEBUG: type(btn)", type(btn))
+
