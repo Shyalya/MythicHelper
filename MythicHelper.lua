@@ -763,38 +763,39 @@ local HEROISM_COOLDOWN = 600  -- Cooldown in Sekunden
 local function StartHeroismBars()
     -- Heroism Laufzeit-Balken (CastBar)
     heroismCastBar:SetMinMaxValues(0, HEROISM_DURATION)
-    heroismCastBar:SetValue(0)
+    heroismCastBar:SetValue(HEROISM_DURATION) -- Start: ganz voll
     heroismCastBar:Show()
     heroismCastBar.startTime = GetTime()
     heroismCastBar:SetScript("OnUpdate", function(self)
-        local elapsed = GetTime() - self.startTime
-        if elapsed < HEROISM_DURATION then
-            self:SetValue(elapsed)
-        else
-            self:SetValue(HEROISM_DURATION)
-            self:Hide()
-            self:SetScript("OnUpdate", nil)
-        end
-    end)
+    local elapsed = GetTime() - self.startTime
+    local remaining = HEROISM_DURATION - elapsed
+    if remaining > 0 then
+        self:SetValue(remaining)
+    else
+        self:SetValue(0)
+        self:Hide()
+        self:SetScript("OnUpdate", nil)
+    end
+end)
 
     -- Heroism Cooldown-Balken (CDBar)
     heroismCDBar:SetMinMaxValues(0, HEROISM_COOLDOWN)
-    heroismCDBar:SetValue(0)
+    heroismCDBar:SetValue(HEROISM_COOLDOWN) -- Start: voll gefüllt
     heroismCDBar:Show()
     heroismCDBar.startTime = GetTime()
     heroismCDBar:SetScript("OnUpdate", function(self)
-        local elapsed = GetTime() - self.startTime
-        if elapsed < HEROISM_COOLDOWN then
-            self:SetValue(elapsed)
-        else
-            self:SetValue(HEROISM_COOLDOWN)
-            self:Hide()
-            self:SetScript("OnUpdate", nil)
-            heroismButton:Enable() -- Button nach CD wieder aktivieren
-        end
-    end)
+    local elapsed = GetTime() - self.startTime
+    local remaining = HEROISM_COOLDOWN - elapsed
+    if remaining > 0 then
+        self:SetValue(remaining)
+    else
+        self:SetValue(0)
+        self:Hide()
+        self:SetScript("OnUpdate", nil)
+        heroismButton:Enable()
+    end
+end)
 end
-
 -- Im Heroism-Button-OnClick-Handler:
 heroismButton:SetScript("OnClick", function()
     if #heroismQueue == 0 then FillHeroismQueue() end
@@ -803,14 +804,14 @@ heroismButton:SetScript("OnClick", function()
         SendChatMessage("cast "..heroismSpell, "WHISPER", nil, nextUser)
         print("Heroism sent to "..nextUser..".")
         -- Heroism läuft jetzt NEU (immer überschreiben)
-        heroismCastEnd = GetTime() + 30 -- 30 Sekunden Laufzeit (anpassen falls nötig)
+        heroismCastEnd = GetTime() + HEROISM_DURATION -- 30 Sekunden Laufzeit (anpassen falls nötig)
         heroismCaster = nextUser
         heroismUserText:SetText("Heroism: "..nextUser)
         heroismButton:Disable()
         StartHeroismBars()
         -- Balken sofort neu anzeigen
-        heroismCastBar:SetMinMaxValues(0, 30)
-        heroismCastBar:SetValue(0)
+        heroismCastBar:SetMinMaxValues(0, HEROISM_DURATION)
+        heroismCastBar:SetValue(HEROISM_DURATION)
         heroismCastBar:Show()
         heroismCDBar:SetMinMaxValues(0, 600)
         heroismCDBar:SetValue(0)
