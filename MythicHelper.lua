@@ -264,7 +264,7 @@ heroismCastBar:SetSize(barWidth, barHeight)
 heroismCastBar:SetPoint("TOP", heroismButton.text, "BOTTOM", 0, -2) -- <- jetzt unter dem Namen
 heroismCastBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
 heroismCastBar:SetStatusBarColor(0, 1, 0) -- Grün für Laufzeit
-heroismCastBar:SetMinMaxValues(0, 60)
+heroismCastBar:SetMinMaxValues(0, 40)
 heroismCastBar:Hide()
 
 local heroismUserText = heroismButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -445,7 +445,6 @@ local function UpdateBars()
     end
     -- Potion
     if potionCD > now then
-        potionButton:Disable()
         potionCDBar:Show()
         potionCDBar:SetValue(potionCD - now)
         potionCasterText:SetText(potionCaster)
@@ -470,11 +469,19 @@ heroismButton:SetScript("OnClick", function()
     if nextUser then
         SendChatMessage("cast "..heroismSpell, "WHISPER", nil, nextUser)
         print("Heroism sent to "..nextUser..".")
-        heroismCastEnd = GetTime() + 30 -- 1min duration
+        -- Heroism läuft jetzt NEU (immer überschreiben)
+        heroismCastEnd = GetTime() + 30 -- 30 Sekunden Laufzeit (anpassen falls nötig)
         heroismCaster = nextUser
         heroismUserText:SetText("Heroism: "..nextUser)
         heroismButton:Disable()
-        -- Sofort zum nächsten Spieler in der Queue wechseln
+        -- Balken sofort neu anzeigen
+        heroismCastBar:SetMinMaxValues(0, 30)
+        heroismCastBar:SetValue(0)
+        heroismCastBar:Show()
+        heroismCDBar:SetMinMaxValues(0, 600)
+        heroismCDBar:SetValue(0)
+        heroismCDBar:Show()
+        -- Zum nächsten Spieler in der Queue wechseln
         heroismQueueIndex = heroismQueueIndex + 1
         if heroismQueueIndex > #heroismQueue then heroismQueueIndex = 1 end
     end
