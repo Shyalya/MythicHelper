@@ -779,7 +779,7 @@ local classWhisperSpells = {
     HUNTER = "cast Rapid Fire",
     WARLOCK = "cast Metamorphosis",
     DRUID = "cast Berserk",
-    DEATHKNIGHT = "cast Army of the Dead",
+    DEATHKNIGHT = "cast Unbreakable Armor",
 }
 
 -- Special Class Whisper Icon-Button (rechts neben Potion)
