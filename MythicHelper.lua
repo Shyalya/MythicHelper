@@ -61,9 +61,9 @@ local classBlockSpells = {
     ["PRIEST"]  = { 10060 },     -- Power Infusion
     ["ROGUE"]   = { 14177 },      -- Cold Blood
     ["HUNTER"]  = { 3045, 19574, 34477 },     -- Rapid Fire, Bestial Wrath, Misdirection
-    ["PALADIN"] = { 20217, 31884 },        -- Blessing of Kings, Wrath
+    ["PALADIN"] = { 31884 },        -- Blessing of Kings, Wrath
     ["SHAMAN"]  = { 2825, 32182 },     -- Heroism
-    ["DEATHKNIGHT"] = { 51271 }, -- Anti-Magic Shell, Icebound Fortitude
+    ["DEATHKNIGHT"] = { 51271, 42650 }, -- Anti-Magic Shell, Icebound Fortitude
     ["WARLOCK"] = { 47836, 59672 }, -- Seed, Metamorphosis
     -- ... weitere Klassen nach Bedarf
 }
