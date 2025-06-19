@@ -42,7 +42,18 @@ local colSpacing = 10
 
 local function AdjustFrameHeight()
     if mainUI:IsShown() then
-        local totalHeight = 28 + 4*(buttonHeight+buttonSpacing) + 8 + 18 + buttonHeight + 8 + 12 + 2 + 8 + 36
+        -- Passe die Höhe an die tatsächliche Anzahl der Reihen und die Buttons unten an:
+        local rows = 4 -- 4 Reihen Auren/Utility
+        local headerSpace = 28 + 26 -- Titel + Main-Name
+        local aurasHeaderSpace = 26
+        local buttonBlock = rows * (buttonHeight + buttonSpacing)
+        local dividerSpace = 24
+        local cooldownHeader = 24
+        local cooldownButtons = buttonHeight + 8
+        local bottomButtons = 44 -- Platz für Change Main & Reset Heroism
+        local padding = 24
+
+        local totalHeight = headerSpace + aurasHeaderSpace + buttonBlock + dividerSpace + cooldownHeader + cooldownButtons + bottomButtons + padding
         frame:SetHeight(totalHeight)
     elseif inputFrame:IsShown() then
         frame:SetHeight(220) -- Feste Höhe für das Auswahlfenster, ggf. anpassen!
@@ -58,10 +69,10 @@ mainUI = CreateFrame("Frame", nil, frame)
 mainUI:SetAllPoints(frame)
 mainUI:Hide()
 
--- Main-Name-Anzeige ganz unten mittig
+-- Main-Name-Anzeige ganz oben unter dem Fenstertitel
 local mainNameText = nil
 mainNameText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-mainNameText:SetPoint("BOTTOM", mainUI, "BOTTOM", 0, 8)
+mainNameText:SetPoint("TOP", mainUI, "TOP", 0, -28)
 mainNameText:SetText("")
 
 -- Funktion zum Aktualisieren des Main-Namens
@@ -177,7 +188,7 @@ end
 
 -- Überschrift über die Auren
 local aurasHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-aurasHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16, -8)
+aurasHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16, -54)
 aurasHeader:SetText("Mythic Auras")
 
 -- 2-Spalten-Layout für Auren (Passe Y-Offset an, damit Buttons unter der Überschrift starten)
@@ -197,7 +208,7 @@ for i, aura in ipairs(auren) do
     local row = math.floor((i-1)/2)
     local btn = CreateFrame("Button", nil, mainUI)
     btn:SetSize(buttonWidth, buttonHeight)
-    btn:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + col*(buttonWidth+colSpacing), -28 - row*(buttonHeight+buttonSpacing))
+    btn:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + col*(buttonWidth+colSpacing), -74 - row*(buttonHeight+buttonSpacing))
 
     btn.icon = btn:CreateTexture(nil, "ARTWORK")
     btn.icon:SetSize(28, 28)
@@ -223,7 +234,7 @@ for i, aura in ipairs(auren) do
 end
 
 -- Trenner unter den Auren (nach 4 Reihen)
-local dividerY = -28 - 4*(buttonHeight+buttonSpacing) - 8
+local dividerY = -28 - 4*(buttonHeight+buttonSpacing) - 8 - buttonHeight - 8
 CreateDivider(mainUI, dividerY)
 
 -- Cooldown-Bereich
@@ -340,14 +351,14 @@ local utilityButtons = {
 
 -- Überschrift für die dritte Spalte (Bot Utilities) auf gleiche Höhe wie Auren
 local botUtilsHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-botUtilsHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), -8)
+botUtilsHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), -54)
 botUtilsHeader:SetText("Bot Utilities")
 
 -- Utility Buttons: Starten auf gleicher Höhe wie die Auren
 for i, btnData in ipairs(utilityButtons) do
     local btn = CreateFrame("Button", nil, mainUI)
     btn:SetSize(buttonWidth, buttonHeight)
-    btn:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), -28 - (i-1)*(buttonHeight+buttonSpacing))
+    btn:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), -74 - (i-1)*(buttonHeight+buttonSpacing))
 
     btn.icon = btn:CreateTexture(nil, "ARTWORK")
     btn.icon:SetSize(28, 28)
@@ -388,19 +399,20 @@ local function FillHeroismQueue()
     wipe(heroismQueue)
     if GetNumRaidMembers() > 0 then
         for i = 1, GetNumRaidMembers() do
-            local name, _, subgroup = GetRaidRosterInfo(i)
+            local name = GetRaidRosterInfo(i)
             if type(name) == "string" and name ~= "" then
-                -- Hier werden ALLE Raidmitglieder (Gruppe 1-8) eingetragen!
                 table.insert(heroismQueue, name)
             end
         end
-    elseif GetNumPartyMembers() > 0 then
+    else
+        -- Party oder Solo
         for i = 1, GetNumPartyMembers() do
             local name = UnitName("party"..i)
-            if type(name) == "string" and name ~= "" and name ~= UnitName("player") then
+            if type(name) == "string" and name ~= "" then
                 table.insert(heroismQueue, name)
             end
         end
+        -- Spieler selbst hinzufügen, falls nicht schon drin
         local playerName = UnitName("player")
         local alreadyInQueue = false
         for _, n in ipairs(heroismQueue) do
@@ -409,8 +421,6 @@ local function FillHeroismQueue()
         if not alreadyInQueue then
             table.insert(heroismQueue, playerName)
         end
-    else
-        table.insert(heroismQueue, UnitName("player"))
     end
     heroismQueueIndex = 1
 end
@@ -421,7 +431,7 @@ local function UpdateBars()
     if heroismCastEnd > now then
         -- Laufzeit läuft (grüner Balken)
         heroismCastBar:Show()
-        heroismCastBar:SetMinMaxValues(0, 60)
+        heroismCastBar:SetMinMaxValues(0, 40)
         heroismCastBar:SetValue(heroismCastEnd - now)
         heroismCDBar:Show()
         heroismCDBar:SetMinMaxValues(0, 600)
@@ -470,12 +480,12 @@ heroismButton:SetScript("OnClick", function()
         SendChatMessage("cast "..heroismSpell, "WHISPER", nil, nextUser)
         print("Heroism sent to "..nextUser..".")
         -- Heroism läuft jetzt NEU (immer überschreiben)
-        heroismCastEnd = GetTime() + 30 -- 30 Sekunden Laufzeit (anpassen falls nötig)
+        heroismCastEnd = GetTime() + 40 -- 30 Sekunden Laufzeit (anpassen falls nötig)
         heroismCaster = nextUser
         heroismUserText:SetText("Heroism: "..nextUser)
         heroismButton:Disable()
         -- Balken sofort neu anzeigen
-        heroismCastBar:SetMinMaxValues(0, 30)
+        heroismCastBar:SetMinMaxValues(0, 40)
         heroismCastBar:SetValue(0)
         heroismCastBar:Show()
         heroismCDBar:SetMinMaxValues(0, 600)
@@ -527,6 +537,11 @@ local function OnEvent(self, event, ...)
         else
             frame:Hide()
             print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
+            -- Potion-Timer zurücksetzen, wenn Instanz verlassen wird
+            potionCD = 0
+            potionCastEnd = 0
+            potionCaster = ""
+            potionCDPending = false
         end
     end
 end
@@ -556,7 +571,18 @@ mainUI:Hide()
 -- Passe das Frame an die neue Höhe an
 local function AdjustFrameHeight()
     if mainUI:IsShown() then
-        local totalHeight = 28 + 4*(buttonHeight+buttonSpacing) + 8 + 18 + buttonHeight + 8 + 12 + 2 + 8 + 36
+        -- Passe die Höhe an die tatsächliche Anzahl der Reihen und die Buttons unten an:
+        local rows = 4 -- 4 Reihen Auren/Utility
+        local headerSpace = 28 + 26 -- Titel + Main-Name
+        local aurasHeaderSpace = 26
+        local buttonBlock = rows * (buttonHeight + buttonSpacing)
+        local dividerSpace = 24
+        local cooldownHeader = 24
+        local cooldownButtons = buttonHeight + 8
+        local bottomButtons = 44 -- Platz für Change Main & Reset Heroism
+        local padding = 24
+
+        local totalHeight = headerSpace + aurasHeaderSpace + buttonBlock + dividerSpace + cooldownHeader + cooldownButtons + bottomButtons + padding
         frame:SetHeight(totalHeight)
     elseif inputFrame:IsShown() then
         frame:SetHeight(220) -- Feste Höhe für das Auswahlfenster, ggf. anpassen!
@@ -820,5 +846,16 @@ heroismButton:SetScript("OnClick", function()
         heroismQueueIndex = heroismQueueIndex + 1
         if heroismQueueIndex > #heroismQueue then heroismQueueIndex = 1 end
     end
+end)
+
+-- Nach der Definition von mainNameText:
+local changeMainButton = CreateFrame("Button", nil, mainUI, "GameMenuButtonTemplate")
+changeMainButton:SetSize(90, 18)
+changeMainButton:SetPoint("BOTTOM", mainUI, "BOTTOM", 0, 8) -- etwas über dem Main-Namen
+changeMainButton:SetText("Change Main")
+changeMainButton:SetScript("OnClick", function()
+    mainUI:Hide()
+    inputFrame:Show()
+    AdjustFrameHeight()
 end)
 
