@@ -18,6 +18,108 @@ frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 frame.title:SetPoint("TOP", frame, "TOP", 0, -6)
 frame.title:SetText("Mythic Helper")
 
+-- 2-Spalten-Layout für Auren (Passe Y-Offset an, damit Buttons unter der Überschrift starten)
+local auren = {
+    { name = "Mythic Aura of Resistance", icon = "Interface\\Icons\\ability_druid_naturalperfection" },
+    { name = "Mythic Aura of Shielding", icon = "Interface\\Icons\\achievement_dungeon_ulduarraid_misc_04" },
+    { name = "Mythic Aura of the Hammer", icon = "Interface\\Icons\\spell_nature_invisibilitytotem" },
+    { name = "Mythic Aura of Preservation", icon = "Interface\\Icons\\spell_nature_rejuvenation" },
+    { name = "Mythic Aura of Berserking", icon = "Interface\\Icons\\ability_warrior_bloodfrenzy" },
+    { name = "Mythic Aura of Damage Orbs", icon = "Interface\\Icons\\ability_rogue_hungerforblood" },
+    { name = "Mythic Aura of Devotion", icon = "Interface\\Icons\\spell_holy_revivechampion" },
+    { name = "Mythic Aura of Healing Orbs", icon = "Interface\\Icons\\spell_arcane_portalshattrath" }
+}
+-- Utility Buttons: 3rd column (right of Potion)
+local utilityButtons = {
+    {
+        name = "No Rest",
+        icon = "Interface\\Icons\\inv_drink_24_sealwhey",
+        message = "nc -food"
+    },
+    {
+        name = "No Loot",
+        icon = "Interface\\Icons\\inv_misc_bag_11",
+        message = "nc -loot"
+    },
+    {
+        name = "Don't Avoid AoE",
+        icon = "Interface\\Icons\\ability_rogue_quickrecovery",
+        message = "co -avoid aoe"
+    },
+    {
+        name = "Flask",
+        icon = "Interface\\Icons\\inv_alchemy_endlessflask_05",
+        message = "u flask of the north"
+    }
+}
+
+-- Spell-IDs, die für jede Klasse geblockt werden sollen (Beispiel-IDs!)
+local classBlockSpells = {
+    ["DRUID"]   = { 50334 },      -- Berserk
+    ["WARRIOR"] = { 20252, 12292 },      -- Intercept, Deathwish
+    ["MAGE"]    = { 11129 },            -- Einäschern
+    ["PRIEST"]  = { 10060 },     -- Power Infusion
+    ["ROGUE"]   = { 14177 },      -- Cold Blood
+    ["HUNTER"]  = { 3045, 19574, 34477 },     -- Rapid Fire, Bestial Wrath, Misdirection
+    ["PALADIN"] = { 20217, 31884 },        -- Blessing of Kings, Wrath
+    ["SHAMAN"]  = { 2825, 32182 },     -- Heroism
+    ["DEATHKNIGHT"] = { 51271 }, -- Anti-Magic Shell, Icebound Fortitude
+    ["WARLOCK"] = { 47836, 59672 }, -- Seed, Metamorphosis
+    -- ... weitere Klassen nach Bedarf
+}
+-- Mapping für kleine Klassenicons (WotLK 3.3.5)
+local CLASS_ICON_TCOORDS = {
+    WARRIOR     = {0, 0.25, 0, 0.25},
+    MAGE        = {0.25, 0.49609375, 0, 0.25},
+    ROGUE       = {0.49609375, 0.7421875, 0, 0.25},
+    DRUID       = {0.7421875, 0.98828125, 0, 0.25},
+    HUNTER      = {0, 0.25, 0.25, 0.5},
+    SHAMAN      = {0.25, 0.49609375, 0.25, 0.5},
+    PRIEST      = {0.49609375, 0.7421875, 0.25, 0.5},
+    WARLOCK     = {0.7421875, 0.98828125, 0.25, 0.5},
+    PALADIN     = {0, 0.25, 0.5, 0.75},
+    DEATHKNIGHT = {0.25, 0.49609375, 0.5, 0.75},
+}
+
+local CLASS_ICONS = {
+    DRUID = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_DRUID",
+    HUNTER = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_HUNTER",
+    MAGE = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_MAGE",
+    PALADIN = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_PALADIN",
+    PRIEST = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_PRIEST",
+    ROGUE = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_ROGUE",
+    SHAMAN = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_SHAMAN",
+    WARLOCK = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_WARLOCK",
+    WARRIOR = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_WARRIOR",
+    DEATHKNIGHT = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_DEATHKNIGHT",
+}
+
+-- Sammelbutton für alle Spellblocks
+local blockIconButtons = {}
+local allBlockButton = CreateFrame("Button", nil, mainUI)
+allBlockButton:SetSize(80, 22)
+allBlockButton.text = allBlockButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+allBlockButton.text:SetPoint("CENTER")
+allBlockButton.text:SetText("Block ALL")
+allBlockButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+
+allBlockButton:SetScript("OnClick", function()
+    for _, btn in ipairs(blockIconButtons) do
+        if btn:IsShown() and btn:IsEnabled() then
+            if not btn.isBlocked then
+                btn:Click()
+            end
+        end
+    end
+end)
+
+allBlockButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Blockt alle Spells für alle Gruppenmitglieder!", 1, 1, 1)
+    GameTooltip:Show()
+end)
+allBlockButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 -- X-Button zum Schließen
 local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 closeButton:SetSize(20, 20)
@@ -42,22 +144,41 @@ local colSpacing = 10
 
 local function AdjustFrameHeight()
     if mainUI:IsShown() then
-        -- Passe die Höhe an die tatsächliche Anzahl der Reihen und die Buttons unten an:
-        local rows = 4 -- 4 Reihen Auren/Utility
-        local headerSpace = 28 + 26 -- Titel + Main-Name
+        local rows = 4
+        local auraRows = math.ceil(#auren / 2)
+        local utilRows = #utilityButtons
+        local headerSpace = 28 + 26
         local aurasHeaderSpace = 26
-        local buttonBlock = rows * (buttonHeight + buttonSpacing)
         local dividerSpace = 24
         local cooldownHeader = 24
         local cooldownButtons = buttonHeight + 8
-        local bottomButtons = 44 -- Platz für Change Main & Reset Heroism
+        local bottomButtons = 44
         local padding = 24
 
+        -- Dynamische Zeilen für Spellblocks
+        local groupSize = 0
+        if GetNumRaidMembers() > 0 then
+            groupSize = GetNumRaidMembers()
+        elseif GetNumPartyMembers() > 0 then
+            groupSize = GetNumPartyMembers() + 1 -- +1 für den Spieler selbst
+        else
+            groupSize = 1
+        end
+        local maxPerCol = 5
+        local spellblockRows = math.min(maxPerCol, groupSize)
+
+        local maxRowsAll = math.max(rows, spellblockRows, utilRows, auraRows)
+        local buttonBlock = maxRowsAll * (buttonHeight + buttonSpacing)
+
         local totalHeight = headerSpace + aurasHeaderSpace + buttonBlock + dividerSpace + cooldownHeader + cooldownButtons + bottomButtons + padding
+
+        -- Passe die Breite für 4 Spalten an:
+        local totalWidth = 16 + 4*buttonWidth + 3*colSpacing + 16
+        frame:SetWidth(totalWidth)
         frame:SetHeight(totalHeight)
     elseif inputFrame:IsShown() then
-        frame:SetHeight(220) -- Feste Höhe für das Auswahlfenster, ggf. anpassen!
-        frame:SetWidth(360)  -- Feste Breite für das Auswahlfenster, ggf. anpassen!
+        frame:SetHeight(220)
+        frame:SetWidth(360)
     else
         frame:SetHeight(80)
         frame:SetWidth(260)
@@ -85,6 +206,148 @@ local function UpdateMainName()
         mainNameText:Hide()
     end
 end
+
+
+
+local function ShowBlockIconButtons()
+    -- Alte Buttons entfernen
+    for _, btn in ipairs(blockIconButtons) do
+        btn:Hide()
+        btn:SetParent(nil)
+    end
+    wipe(blockIconButtons)
+
+    -- Positionierung
+    local blockBtnSize = 28
+    local blockBtnSpacing = 8
+    -- Vierte Spalte: X-Position = 16 + 3*(buttonWidth+colSpacing)
+    local blockBtnX = 16 + 3*(buttonWidth+colSpacing)
+    -- Y-Position wie die anderen Spalten
+    local baseY = -74
+
+    -- Berechne die maximale Zeilenzahl der linken Spalten
+    local auraRows = math.ceil(#auren / 2)
+    local utilRows = #utilityButtons
+    local maxRows = math.max(auraRows, utilRows)
+
+    -- Y-Start für Spellblocks: wie die anderen Spalten, aber + (maxRows - 4) * (buttonHeight + buttonSpacing)
+    local extraRows = math.max(0, maxRows - 4)
+    local blockBtnStartY = baseY - extraRows * (buttonHeight + buttonSpacing)
+
+    -- Gruppenmitglieder neu sammeln
+    local groupMembers = {}
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            local unit = "raid"..i
+            local _, class = UnitClass(unit) -- gibt IMMER den englischen Klassencode!
+            if name and class then
+                table.insert(groupMembers, { name = name, class = class })
+            end
+        end
+    else
+        for i = 1, GetNumPartyMembers() do
+            local unit = "party"..i
+            local name = UnitName(unit)
+            local _, class = UnitClass(unit)
+            if name and class then
+                table.insert(groupMembers, { name = name, class = class })
+            end
+        end
+        -- Spieler selbst hinzufügen
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        table.insert(groupMembers, { name = playerName, class = playerClass })
+    end
+
+    -- Buttons erzeugen
+    local maxPerCol = 5
+    for i, member in ipairs(groupMembers) do
+        local spells = classBlockSpells[member.class]
+        if spells then
+            local col = math.floor((i-1) / maxPerCol)
+            local row = (i-1) % maxPerCol
+            local btn = CreateFrame("Button", nil, mainUI)
+            btn:SetSize(blockBtnSize, blockBtnSize)
+            btn:SetPoint("TOPLEFT", mainUI, "TOPLEFT",
+                blockBtnX + col*(blockBtnSize+blockBtnSpacing),
+                blockBtnStartY - row*(blockBtnSize+blockBtnSpacing))
+
+            btn.icon = btn:CreateTexture(nil, "ARTWORK")
+            btn.icon:SetAllPoints(btn)
+            btn.icon:SetTexture("Interface\\TargetingFrame\\UI-Classes-Circles")
+            local coords = CLASS_ICON_TCOORDS[member.class]
+            if coords then
+                btn.icon:SetTexCoord(unpack(coords))
+            else
+                btn.icon:SetTexCoord(0,1,0,1)
+            end
+
+            btn.isBlocked = false -- Status speichern
+
+            btn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                local spellNames = {}
+                for _, spellID in ipairs(spells) do
+                    local name = GetSpellInfo(spellID)
+                    table.insert(spellNames, name or tostring(spellID))
+                end
+                GameTooltip:SetText(member.name.." ("..member.class..")\nBlock: "..table.concat(spellNames, ", "), 1, 1, 1)
+                GameTooltip:Show()
+            end)
+            btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            btn:SetScript("OnClick", function(self)
+                if not self.isBlocked then
+                    -- ALLE Spell-IDs zu einem String verbinden
+                    local spellString = table.concat(spells, ",")
+                    SendChatMessage("ss +"..spellString, "WHISPER", nil, member.name)
+                    print("Block-Spells an "..member.name.." gesendet: ss +"..spellString)
+                    self.isBlocked = true
+                    btn.icon:SetVertexColor(1, 0.5, 0.5)
+                else
+                    local spellString = table.concat(spells, ",")
+                    SendChatMessage("ss -" .. spellString, "WHISPER", nil, member.name)
+                    print("Unblock-Spells an "..member.name.." gesendet: ss -" .. spellString)
+                    self.isBlocked = false
+                    btn.icon:SetVertexColor(1, 1, 1)
+                end
+            end)
+            btn:Show()
+            table.insert(blockIconButtons, btn)
+        end
+    end
+    -- Berechne, wie viele Zeilen Spellblock-Buttons es gibt
+local numMembers = #blockIconButtons
+local maxPerCol = 5
+local numCols = math.ceil(numMembers / maxPerCol)
+local lastColCount = numMembers % maxPerCol
+if lastColCount == 0 and numMembers > 0 then lastColCount = maxPerCol end
+
+-- Positioniere den Block ALL Button unter die letzte Zeile der Spellblock-Buttons
+local blockBtnSize = 28
+local blockBtnSpacing = 8
+local blockBtnX = 16 + 3*(buttonWidth+colSpacing)
+local blockBtnStartY = baseY - extraRows * (buttonHeight + buttonSpacing)
+local col = numCols - 1
+local row = lastColCount
+
+allBlockButton:ClearAllPoints()
+if numMembers > 0 then
+    local lastBtn = blockIconButtons[#blockIconButtons]
+    if lastBtn then
+        allBlockButton:SetPoint("TOP", lastBtn, "BOTTOM", 0, -6)
+    else
+        -- Fallback: erste Spellblock-Position
+        allBlockButton:SetPoint("TOPLEFT", mainUI, "TOPLEFT", blockBtnX, blockBtnStartY)
+    end
+else
+    -- Unter die Spellblocks-Überschrift, linksbündig
+    allBlockButton:SetPoint("TOPLEFT", spellblocksHeader, "BOTTOMLEFT", 0, -8)
+end
+allBlockButton:Show()
+end
+
 
 -- Passe ShowNameButtons an:
 local mhnameButtons = {}
@@ -160,6 +423,7 @@ local function ShowNameButtons()
                 AdjustFrameHeight()
                 UpdateMainName()
                 inputFrame:Hide()
+                ShowBlockIconButtons() -- <--- HIER HINZUFÜGEN
             end)
             btn:Enable()
         else
@@ -191,17 +455,7 @@ local aurasHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 aurasHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16, -54)
 aurasHeader:SetText("Mythic Auras")
 
--- 2-Spalten-Layout für Auren (Passe Y-Offset an, damit Buttons unter der Überschrift starten)
-local auren = {
-    { name = "Mythic Aura of Resistance", icon = "Interface\\Icons\\ability_druid_naturalperfection" },
-    { name = "Mythic Aura of Shielding", icon = "Interface\\Icons\\achievement_dungeon_ulduarraid_misc_04" },
-    { name = "Mythic Aura of the Hammer", icon = "Interface\\Icons\\spell_nature_invisibilitytotem" },
-    { name = "Mythic Aura of Preservation", icon = "Interface\\Icons\\spell_nature_rejuvenation" },
-    { name = "Mythic Aura of Berserking", icon = "Interface\\Icons\\ability_warrior_bloodfrenzy" },
-    { name = "Mythic Aura of Damage Orbs", icon = "Interface\\Icons\\ability_rogue_hungerforblood" },
-    { name = "Mythic Aura of Devotion", icon = "Interface\\Icons\\spell_holy_revivechampion" },
-    { name = "Mythic Aura of Healing Orbs", icon = "Interface\\Icons\\spell_arcane_portalshattrath" }
-}
+
 local auraButtons = {}
 for i, aura in ipairs(auren) do
     local col = ((i-1) % 2)
@@ -325,29 +579,6 @@ local potionCasterText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal
 potionCasterText:SetPoint("LEFT", potionCDBar, "LEFT", 2, 0)
 potionCasterText:SetText("")
 
--- Utility Buttons: 3rd column (right of Potion)
-local utilityButtons = {
-    {
-        name = "No Rest",
-        icon = "Interface\\Icons\\inv_drink_24_sealwhey",
-        message = "nc -food"
-    },
-    {
-        name = "No Loot",
-        icon = "Interface\\Icons\\inv_misc_bag_11",
-        message = "nc -loot"
-    },
-    {
-        name = "Don't Avoid AoE",
-        icon = "Interface\\Icons\\ability_rogue_quickrecovery",
-        message = "co -avoid aoe"
-    },
-    {
-        name = "Flask",
-        icon = "Interface\\Icons\\inv_alchemy_endlessflask_05",
-        message = "u flask of the north"
-    }
-}
 
 -- Überschrift für die dritte Spalte (Bot Utilities) auf gleiche Höhe wie Auren
 local botUtilsHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -515,6 +746,105 @@ potionButton:SetScript("OnClick", function()
     end
 end)
 
+-- Überschrift für die vierte Spalte (Spellblocks) -- MUSS VOR ShowBlockIconButtons stehen!
+local spellblocksHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+spellblocksHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 3*(buttonWidth+colSpacing), -54)
+spellblocksHeader:SetText("Spellblocks")
+
+
+-- Rufe die Funktion auf, wenn das Hauptfenster angezeigt wird:
+mainUI:HookScript("OnShow", function()
+    AdjustFrameHeight()
+    ShowBlockIconButtons()
+end)
+
+-- Event-Handler für Gruppenänderungen
+local f = CreateFrame("Frame")
+f:RegisterEvent("RAID_ROSTER_UPDATE")
+f:RegisterEvent("PARTY_MEMBERS_CHANGED")
+f:SetScript("OnEvent", function(self, event, ...)
+    if mainUI:IsShown() then
+        ShowBlockIconButtons()
+    end
+end)
+
+-- Mapping: Klasse -> Spellname für Flüstern
+local classWhisperSpells = {
+    PALADIN = "cast Avenging Wrath",
+    SHAMAN = "cast Bloodlust",
+    WARRIOR = "cast Death Wish",
+    MAGE = "cast Combustion",
+    PRIEST = "cast Power Infusion",
+    ROGUE = "cast Adrenaline Rush",
+    HUNTER = "cast Rapid Fire",
+    WARLOCK = "cast Metamorphosis",
+    DRUID = "cast Berserk",
+    DEATHKNIGHT = "cast Army of the Dead",
+}
+
+-- Special Class Whisper Icon-Button (rechts neben Potion)
+local specialWhisperIcon = "Interface\\Icons\\achievement_pvp_o_h" -- Wähle ein beliebiges Icon
+
+local specialWhisperButton = CreateFrame("Button", nil, mainUI)
+specialWhisperButton:SetSize(buttonWidth, buttonHeight)
+specialWhisperButton:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), dividerY - 38)
+
+specialWhisperButton.icon = specialWhisperButton:CreateTexture(nil, "ARTWORK")
+specialWhisperButton.icon:SetSize(28, 28)
+specialWhisperButton.icon:SetPoint("TOP", specialWhisperButton, "TOP", 0, -2)
+specialWhisperButton.icon:SetTexture(specialWhisperIcon)
+
+specialWhisperButton.text = specialWhisperButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+specialWhisperButton.text:SetPoint("TOP", specialWhisperButton.icon, "BOTTOM", 0, -1)
+specialWhisperButton.text:SetText("Special")
+specialWhisperButton.text:SetTextColor(1, 0.82, 0)
+
+specialWhisperButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+specialWhisperButton:SetScript("OnClick", function()
+    -- Hole aktuelle Gruppenmitglieder
+    local members = {}
+    if GetNumRaidMembers() > 0 then
+    for i = 1, GetNumRaidMembers() do
+        local name = GetRaidRosterInfo(i)
+        local unit = "raid"..i
+        local _, class = UnitClass(unit) -- gibt IMMER den englischen Klassencode!
+        if name and class then
+            table.insert(members, { name = name, class = class })
+        end
+    end
+else
+    for i = 1, GetNumPartyMembers() do
+        local unit = "party"..i
+        local name = UnitName(unit)
+        local _, class = UnitClass(unit)
+        if name and class then
+            table.insert(members, { name = name, class = class })
+        end
+    end
+    -- Spieler selbst hinzufügen
+    local playerName = UnitName("player")
+    local _, playerClass = UnitClass("player")
+    table.insert(members, { name = playerName, class = playerClass })
+end
+
+    -- Flüstere jedem die passende Nachricht
+    for _, member in ipairs(members) do
+        local msg = classWhisperSpells[member.class]
+        if msg then
+            SendChatMessage(msg, "WHISPER", nil, member.name)
+            print("Sent to "..member.name..": "..msg)
+        end
+    end
+end)
+
+specialWhisperButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Special Class Whisper\nPower your Cooldowns!", 1, 1, 1)
+    GameTooltip:Show()
+end)
+specialWhisperButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+
 -- Überprüfen, ob das Addon geladen werden soll
 local function CanLoadMythicHelper()
     local inInstance, instanceType = IsInInstance()
@@ -571,18 +901,37 @@ mainUI:Hide()
 -- Passe das Frame an die neue Höhe an
 local function AdjustFrameHeight()
     if mainUI:IsShown() then
-        -- Passe die Höhe an die tatsächliche Anzahl der Reihen und die Buttons unten an:
-        local rows = 4 -- 4 Reihen Auren/Utility
-        local headerSpace = 28 + 26 -- Titel + Main-Name
+        local rows = 4
+        local auraRows = math.ceil(#auren / 2)
+        local utilRows = #utilityButtons
+        local headerSpace = 28 + 26
         local aurasHeaderSpace = 26
-        local buttonBlock = rows * (buttonHeight + buttonSpacing)
         local dividerSpace = 24
         local cooldownHeader = 24
         local cooldownButtons = buttonHeight + 8
-        local bottomButtons = 44 -- Platz für Change Main & Reset Heroism
+        local bottomButtons = 44
         local padding = 24
 
+        -- Dynamische Zeilen für Spellblocks
+        local groupSize = 0
+        if GetNumRaidMembers() > 0 then
+            groupSize = GetNumRaidMembers()
+        elseif GetNumPartyMembers() > 0 then
+            groupSize = GetNumPartyMembers() + 1 -- +1 für den Spieler selbst
+        else
+            groupSize = 1
+        end
+        local maxPerCol = 5
+        local spellblockRows = math.min(maxPerCol, groupSize)
+
+        local maxRowsAll = math.max(rows, spellblockRows, utilRows, auraRows)
+        local buttonBlock = maxRowsAll * (buttonHeight + buttonSpacing)
+
         local totalHeight = headerSpace + aurasHeaderSpace + buttonBlock + dividerSpace + cooldownHeader + cooldownButtons + bottomButtons + padding
+
+        -- Passe die Breite für 4 Spalten an:
+        local totalWidth = 16 + 4*buttonWidth + 3*colSpacing + 16
+        frame:SetWidth(totalWidth)
         frame:SetHeight(totalHeight)
     elseif inputFrame:IsShown() then
         frame:SetHeight(220) -- Feste Höhe für das Auswahlfenster, ggf. anpassen!
@@ -611,7 +960,8 @@ SlashCmdList["MHELPER"] = function()
         frame:Hide()
     else
         frame:Show()
-        AdjustFrameHeight() -- Höhe anpassen, wenn das Fenster geöffnet wird
+        AdjustFrameHeight()
+        ShowBlockIconButtons() -- <--- HIER HINZUFÜGEN
     end
 end
 
@@ -633,6 +983,7 @@ minimapButton:SetScript("OnClick", function()
         frame:Hide()
     else
         frame:Show()
+        ShowBlockIconButtons() -- <--- HIER HINZUFÜGEN
     end
 end)
 
@@ -759,6 +1110,7 @@ function UpdateMythicHelperButtons()
                 AdjustFrameHeight()
                 UpdateMainName()
                 inputFrame:Hide()
+                ShowBlockIconButtons() -- <--- HIER HINZUFÜGEN
             end)
             btn:Enable()
         else
@@ -776,7 +1128,9 @@ local f = CreateFrame("Frame")
 f:RegisterEvent("RAID_ROSTER_UPDATE")
 f:RegisterEvent("PARTY_MEMBERS_CHANGED")
 f:SetScript("OnEvent", function(self, event, ...)
-    UpdateMythicHelperButtons()
+    if mainUI:IsShown() then
+        ShowBlockIconButtons()
+    end
 end)
 
 print("DEBUG: type(mhnameButtons)", type(mhnameButtons))
@@ -858,4 +1212,15 @@ changeMainButton:SetScript("OnClick", function()
     inputFrame:Show()
     AdjustFrameHeight()
 end)
+
+-- Nach dem Erstellen von allBlockButton:
+allBlockButton:SetFrameStrata("DIALOG")
+allBlockButton:SetFrameLevel(mainUI:GetFrameLevel() + 10)
+allBlockButton:SetSize(28, 22)
+allBlockButton.text:SetFont("Fonts\\FRIZQT__.TTF", 6, "")
+
+
+
+
+
 
