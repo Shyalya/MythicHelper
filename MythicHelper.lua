@@ -770,16 +770,16 @@ end)
 
 -- Mapping: Klasse -> Spellname für Flüstern
 local classWhisperSpells = {
-    PALADIN = "cast Avenging Wrath",
-    SHAMAN = "cast Bloodlust",
-    WARRIOR = "cast Death Wish",
-    MAGE = "cast Combustion",
-    PRIEST = "cast Power Infusion",
-    ROGUE = "cast Adrenaline Rush",
-    HUNTER = "cast Rapid Fire",
-    WARLOCK = "cast Metamorphosis",
-    DRUID = "cast Berserk",
-    DEATHKNIGHT = "cast Unbreakable Armor",
+    PALADIN = { "cast Avenging Wrath" },
+    SHAMAN = { "cast Bloodlust", "cast Heroism" },
+    WARRIOR = { "cast Death Wish", "cast Recklessness" },
+    MAGE = { "cast Combustion" },
+    PRIEST = { "cast Power Infusion" },
+    ROGUE = { "cast Adrenaline Rush" },
+    HUNTER = { "cast Rapid Fire" },
+    WARLOCK = { "cast Metamorphosis" },
+    DRUID = { "cast Berserk" },
+    DEATHKNIGHT = { "cast Unbreakable Armor", "cast Army of the Dead" },
 }
 
 -- Special Class Whisper Icon-Button (rechts neben Potion)
