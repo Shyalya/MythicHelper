@@ -56,7 +56,7 @@ local utilityButtons = {
 -- Spell-IDs, die für jede Klasse geblockt werden sollen (Beispiel-IDs!)
 local classBlockSpells = {
     ["DRUID"]   = { 50334 },      -- Berserk
-    ["WARRIOR"] = { 20252, 12292 },      -- Intercept, Deathwish
+    ["WARRIOR"] = { 1719, 20252, 12292 },      -- Intercept, Deathwish
     ["MAGE"]    = { 11129 },            -- Einäschern
     ["PRIEST"]  = { 10060 },     -- Power Infusion
     ["ROGUE"]   = { 14177 },      -- Cold Blood
@@ -801,38 +801,40 @@ specialWhisperButton.text:SetTextColor(1, 0.82, 0)
 
 specialWhisperButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
 specialWhisperButton:SetScript("OnClick", function()
-    -- Hole aktuelle Gruppenmitglieder
     local members = {}
     if GetNumRaidMembers() > 0 then
-    for i = 1, GetNumRaidMembers() do
-        local name = GetRaidRosterInfo(i)
-        local unit = "raid"..i
-        local _, class = UnitClass(unit) -- gibt IMMER den englischen Klassencode!
-        if name and class then
-            table.insert(members, { name = name, class = class })
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            local unit = "raid"..i
+            local _, class = UnitClass(unit)
+            if name and class then
+                table.insert(members, { name = name, class = class })
+            end
         end
-    end
-else
-    for i = 1, GetNumPartyMembers() do
-        local unit = "party"..i
-        local name = UnitName(unit)
-        local _, class = UnitClass(unit)
-        if name and class then
-            table.insert(members, { name = name, class = class })
+    else
+        for i = 1, GetNumPartyMembers() do
+            local unit = "party"..i
+            local name = UnitName(unit)
+            local _, class = UnitClass(unit)
+            if name and class then
+                table.insert(members, { name = name, class = class })
+            end
         end
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        table.insert(members, { name = playerName, class = playerClass })
     end
-    -- Spieler selbst hinzufügen
-    local playerName = UnitName("player")
-    local _, playerClass = UnitClass("player")
-    table.insert(members, { name = playerName, class = playerClass })
-end
 
-    -- Flüstere jedem die passende Nachricht
     for _, member in ipairs(members) do
-        local msg = classWhisperSpells[member.class]
-        if msg then
-            SendChatMessage(msg, "WHISPER", nil, member.name)
-            print("Sent to "..member.name..": "..msg)
+        local msgs = classWhisperSpells[member.class]
+        if type(msgs) == "table" then
+            for _, msg in ipairs(msgs) do
+                SendChatMessage(msg, "WHISPER", nil, member.name)
+                print("Sent to "..member.name..": "..msg)
+            end
+        elseif type(msgs) == "string" then
+            SendChatMessage(msgs, "WHISPER", nil, member.name)
+            print("Sent to "..member.name..": "..msgs)
         end
     end
 end)
