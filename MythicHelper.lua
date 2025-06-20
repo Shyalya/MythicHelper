@@ -926,7 +926,7 @@ f:RegisterEvent("RAID_ROSTER_UPDATE")
 f:RegisterEvent("PARTY_MEMBERS_CHANGED")
 f:SetScript("OnEvent", function(self, event, ...)
     if mainUI:IsShown() then
-        ShowBlockIconButtons()
+        UpdateMythicHelperButtons()
     end
 end)
 
