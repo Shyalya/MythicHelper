@@ -53,20 +53,7 @@ local utilityButtons = {
     }
 }
 
--- Spell-IDs, die für jede Klasse geblockt werden sollen (Beispiel-IDs!)
-local classBlockSpells = {
-    ["DRUID"]   = { 50334 },      -- Berserk
-    ["WARRIOR"] = { 1719, 20252, 12292 },      -- Intercept, Deathwish
-    ["MAGE"]    = { 11129 },            -- Einäschern
-    ["PRIEST"]  = { 10060 },     -- Power Infusion
-    ["ROGUE"]   = { 14177 },      -- Cold Blood
-    ["HUNTER"]  = { 3045, 19574, 34477 },     -- Rapid Fire, Bestial Wrath, Misdirection
-    ["PALADIN"] = { 31884 },        -- Blessing of Kings, Wrath
-    ["SHAMAN"]  = { 2825, 32182 },     -- Heroism
-    ["DEATHKNIGHT"] = { 51271, 42650 }, -- Anti-Magic Shell, Icebound Fortitude
-    ["WARLOCK"] = { 47836, 59672 }, -- Seed, Metamorphosis
-    -- ... weitere Klassen nach Bedarf
-}
+
 -- Mapping für kleine Klassenicons (WotLK 3.3.5)
 local CLASS_ICON_TCOORDS = {
     WARRIOR     = {0, 0.25, 0, 0.25},
@@ -93,32 +80,6 @@ local CLASS_ICONS = {
     WARRIOR = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_WARRIOR",
     DEATHKNIGHT = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_DEATHKNIGHT",
 }
-
--- Sammelbutton für alle Spellblocks
-local blockIconButtons = {}
-local allBlockButton = CreateFrame("Button", nil, mainUI)
-allBlockButton:SetSize(80, 22)
-allBlockButton.text = allBlockButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-allBlockButton.text:SetPoint("CENTER")
-allBlockButton.text:SetText("Block ALL")
-allBlockButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-
-allBlockButton:SetScript("OnClick", function()
-    for _, btn in ipairs(blockIconButtons) do
-        if btn:IsShown() and btn:IsEnabled() then
-            if not btn.isBlocked then
-                btn:Click()
-            end
-        end
-    end
-end)
-
-allBlockButton:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Blockt alle Spells für alle Gruppenmitglieder!", 1, 1, 1)
-    GameTooltip:Show()
-end)
-allBlockButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 -- X-Button zum Schließen
 local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -173,7 +134,7 @@ local function AdjustFrameHeight()
         local totalHeight = headerSpace + aurasHeaderSpace + buttonBlock + dividerSpace + cooldownHeader + cooldownButtons + bottomButtons + padding
 
         -- Passe die Breite für 4 Spalten an:
-        local totalWidth = 16 + 4*buttonWidth + 3*colSpacing + 16
+        local totalWidth = 16 + 3*buttonWidth + 3*colSpacing + 16
         frame:SetWidth(totalWidth)
         frame:SetHeight(totalHeight)
     elseif inputFrame:IsShown() then
@@ -205,147 +166,6 @@ local function UpdateMainName()
         mainNameText:SetText("")
         mainNameText:Hide()
     end
-end
-
-
-
-local function ShowBlockIconButtons()
-    -- Alte Buttons entfernen
-    for _, btn in ipairs(blockIconButtons) do
-        btn:Hide()
-        btn:SetParent(nil)
-    end
-    wipe(blockIconButtons)
-
-    -- Positionierung
-    local blockBtnSize = 28
-    local blockBtnSpacing = 8
-    -- Vierte Spalte: X-Position = 16 + 3*(buttonWidth+colSpacing)
-    local blockBtnX = 16 + 3*(buttonWidth+colSpacing)
-    -- Y-Position wie die anderen Spalten
-    local baseY = -74
-
-    -- Berechne die maximale Zeilenzahl der linken Spalten
-    local auraRows = math.ceil(#auren / 2)
-    local utilRows = #utilityButtons
-    local maxRows = math.max(auraRows, utilRows)
-
-    -- Y-Start für Spellblocks: wie die anderen Spalten, aber + (maxRows - 4) * (buttonHeight + buttonSpacing)
-    local extraRows = math.max(0, maxRows - 4)
-    local blockBtnStartY = baseY - extraRows * (buttonHeight + buttonSpacing)
-
-    -- Gruppenmitglieder neu sammeln
-    local groupMembers = {}
-    if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-            local name = GetRaidRosterInfo(i)
-            local unit = "raid"..i
-            local _, class = UnitClass(unit) -- gibt IMMER den englischen Klassencode!
-            if name and class then
-                table.insert(groupMembers, { name = name, class = class })
-            end
-        end
-    else
-        for i = 1, GetNumPartyMembers() do
-            local unit = "party"..i
-            local name = UnitName(unit)
-            local _, class = UnitClass(unit)
-            if name and class then
-                table.insert(groupMembers, { name = name, class = class })
-            end
-        end
-        -- Spieler selbst hinzufügen
-        local playerName = UnitName("player")
-        local _, playerClass = UnitClass("player")
-        table.insert(groupMembers, { name = playerName, class = playerClass })
-    end
-
-    -- Buttons erzeugen
-    local maxPerCol = 5
-    for i, member in ipairs(groupMembers) do
-        local spells = classBlockSpells[member.class]
-        if spells then
-            local col = math.floor((i-1) / maxPerCol)
-            local row = (i-1) % maxPerCol
-            local btn = CreateFrame("Button", nil, mainUI)
-            btn:SetSize(blockBtnSize, blockBtnSize)
-            btn:SetPoint("TOPLEFT", mainUI, "TOPLEFT",
-                blockBtnX + col*(blockBtnSize+blockBtnSpacing),
-                blockBtnStartY - row*(blockBtnSize+blockBtnSpacing))
-
-            btn.icon = btn:CreateTexture(nil, "ARTWORK")
-            btn.icon:SetAllPoints(btn)
-            btn.icon:SetTexture("Interface\\TargetingFrame\\UI-Classes-Circles")
-            local coords = CLASS_ICON_TCOORDS[member.class]
-            if coords then
-                btn.icon:SetTexCoord(unpack(coords))
-            else
-                btn.icon:SetTexCoord(0,1,0,1)
-            end
-
-            btn.isBlocked = false -- Status speichern
-
-            btn:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                local spellNames = {}
-                for _, spellID in ipairs(spells) do
-                    local name = GetSpellInfo(spellID)
-                    table.insert(spellNames, name or tostring(spellID))
-                end
-                GameTooltip:SetText(member.name.." ("..member.class..")\nBlock: "..table.concat(spellNames, ", "), 1, 1, 1)
-                GameTooltip:Show()
-            end)
-            btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-            btn:SetScript("OnClick", function(self)
-                if not self.isBlocked then
-                    -- ALLE Spell-IDs zu einem String verbinden
-                    local spellString = table.concat(spells, ",")
-                    SendChatMessage("ss +"..spellString, "WHISPER", nil, member.name)
-                    print("Block-Spells an "..member.name.." gesendet: ss +"..spellString)
-                    self.isBlocked = true
-                    btn.icon:SetVertexColor(1, 0.5, 0.5)
-                else
-                    local spellString = table.concat(spells, ",")
-                    SendChatMessage("ss -" .. spellString, "WHISPER", nil, member.name)
-                    print("Unblock-Spells an "..member.name.." gesendet: ss -" .. spellString)
-                    self.isBlocked = false
-                    btn.icon:SetVertexColor(1, 1, 1)
-                end
-            end)
-            btn:Show()
-            table.insert(blockIconButtons, btn)
-        end
-    end
-    -- Berechne, wie viele Zeilen Spellblock-Buttons es gibt
-local numMembers = #blockIconButtons
-local maxPerCol = 5
-local numCols = math.ceil(numMembers / maxPerCol)
-local lastColCount = numMembers % maxPerCol
-if lastColCount == 0 and numMembers > 0 then lastColCount = maxPerCol end
-
--- Positioniere den Block ALL Button unter die letzte Zeile der Spellblock-Buttons
-local blockBtnSize = 28
-local blockBtnSpacing = 8
-local blockBtnX = 16 + 3*(buttonWidth+colSpacing)
-local blockBtnStartY = baseY - extraRows * (buttonHeight + buttonSpacing)
-local col = numCols - 1
-local row = lastColCount
-
-allBlockButton:ClearAllPoints()
-if numMembers > 0 then
-    local lastBtn = blockIconButtons[#blockIconButtons]
-    if lastBtn then
-        allBlockButton:SetPoint("TOP", lastBtn, "BOTTOM", 0, -6)
-    else
-        -- Fallback: erste Spellblock-Position
-        allBlockButton:SetPoint("TOPLEFT", mainUI, "TOPLEFT", blockBtnX, blockBtnStartY)
-    end
-else
-    -- Unter die Spellblocks-Überschrift, linksbündig
-    allBlockButton:SetPoint("TOPLEFT", spellblocksHeader, "BOTTOMLEFT", 0, -8)
-end
-allBlockButton:Show()
 end
 
 
@@ -422,8 +242,7 @@ local function ShowNameButtons()
                 mainUI:Show()
                 AdjustFrameHeight()
                 UpdateMainName()
-                inputFrame:Hide()
-                ShowBlockIconButtons() -- <--- HIER HINZUFÜGEN
+                inputFrame:Hide()   
             end)
             btn:Enable()
         else
@@ -746,27 +565,6 @@ potionButton:SetScript("OnClick", function()
     end
 end)
 
--- Überschrift für die vierte Spalte (Spellblocks) -- MUSS VOR ShowBlockIconButtons stehen!
-local spellblocksHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-spellblocksHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 3*(buttonWidth+colSpacing), -54)
-spellblocksHeader:SetText("Spellblocks")
-
-
--- Rufe die Funktion auf, wenn das Hauptfenster angezeigt wird:
-mainUI:HookScript("OnShow", function()
-    AdjustFrameHeight()
-    ShowBlockIconButtons()
-end)
-
--- Event-Handler für Gruppenänderungen
-local f = CreateFrame("Frame")
-f:RegisterEvent("RAID_ROSTER_UPDATE")
-f:RegisterEvent("PARTY_MEMBERS_CHANGED")
-f:SetScript("OnEvent", function(self, event, ...)
-    if mainUI:IsShown() then
-        ShowBlockIconButtons()
-    end
-end)
 
 -- Mapping: Klasse -> Spellname für Flüstern
 local classWhisperSpells = {
@@ -963,7 +761,6 @@ SlashCmdList["MHELPER"] = function()
     else
         frame:Show()
         AdjustFrameHeight()
-        ShowBlockIconButtons() -- <--- HIER HINZUFÜGEN
     end
 end
 
@@ -985,7 +782,6 @@ minimapButton:SetScript("OnClick", function()
         frame:Hide()
     else
         frame:Show()
-        ShowBlockIconButtons() -- <--- HIER HINZUFÜGEN
     end
 end)
 
@@ -1112,7 +908,6 @@ function UpdateMythicHelperButtons()
                 AdjustFrameHeight()
                 UpdateMainName()
                 inputFrame:Hide()
-                ShowBlockIconButtons() -- <--- HIER HINZUFÜGEN
             end)
             btn:Enable()
         else
@@ -1134,9 +929,6 @@ f:SetScript("OnEvent", function(self, event, ...)
         ShowBlockIconButtons()
     end
 end)
-
-print("DEBUG: type(mhnameButtons)", type(mhnameButtons))
-print("DEBUG: type(btn)", type(btn))
 
 -- Beispielwerte, ggf. anpassen:
 local HEROISM_DURATION = 40   -- Laufzeit in Sekunden
@@ -1214,14 +1006,6 @@ changeMainButton:SetScript("OnClick", function()
     inputFrame:Show()
     AdjustFrameHeight()
 end)
-
--- Nach dem Erstellen von allBlockButton:
-allBlockButton:SetFrameStrata("DIALOG")
-allBlockButton:SetFrameLevel(mainUI:GetFrameLevel() + 10)
-allBlockButton:SetSize(28, 22)
-allBlockButton.text:SetFont("Fonts\\FRIZQT__.TTF", 6, "")
-
-
 
 
 
