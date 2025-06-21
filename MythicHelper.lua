@@ -32,40 +32,48 @@ local auren = {
 
 -- Diese Funktion muss vor einem Kampf ausgeführt werden!
 local function GetSpecForHybrid(unit)
-    if not CanInspect(unit) then return nil end
+    if not UnitExists(unit) then 
+        return nil 
+    end
     
-    NotifyInspect(unit)
-    
-    -- Anzahl der Punkte in jedem Talentbaum
-    local tab1, tab2, tab3 = 0, 0, 0
-    for i = 1, MAX_TALENT_TABS do
-        for j = 1, GetNumTalents(i, false, false) do
-            local _, _, _, _, currRank = GetTalentInfo(i, j, false, false)
-            if i == 1 then tab1 = tab1 + currRank
-            elseif i == 2 then tab2 = tab2 + currRank
-            else tab3 = tab3 + currRank end
+    -- Direktes Auslesen für den eigenen Charakter
+    if unit == "player" then
+        local tab1, tab2, tab3 = 0, 0, 0
+        for i = 1, GetNumTalentTabs() do
+            for j = 1, GetNumTalents(i) do
+                local _, _, _, _, currRank = GetTalentInfo(i, j)
+                if i == 1 then tab1 = tab1 + currRank
+                elseif i == 2 then tab2 = tab2 + currRank
+                else tab3 = tab3 + currRank end
+            end
+        end
+        
+        local _, class = UnitClass(unit)
+        local maxPoints = math.max(tab1, tab2, tab3)
+        print("DEBUG Self: "..UnitName(unit).." - Talent Points: "..tab1.."/"..tab2.."/"..tab3)
+        
+        -- Rest der Funktion für die Klassen-Auswertung...
+        if class == "DRUID" then
+            if maxPoints == tab1 then return "Balance"     -- Caster
+            elseif maxPoints == tab2 then return "Feral"   -- Melee/Tank
+            else return "Restoration" end                  -- Healer
+        -- usw. für andere Klassen...
+        
+    -- Für andere Charaktere: Default-Werte nach Klasse verwenden
+    else
+        local _, class = UnitClass(unit)
+        if class == "DRUID" then
+            return "Balance"    -- Standard-Annahme für Druiden
+        elseif class == "SHAMAN" then
+            return "Elemental"  -- Standard-Annahme für Schamanen
+        elseif class == "PRIEST" then
+            return "Discipline" -- Standard-Annahme für Priester
+        elseif class == "PALADIN" then
+            return "Holy"       -- Standard-Annahme für Paladine
         end
     end
     
-    -- Welcher Baum hat die meisten Punkte?
-    local _, class = UnitClass(unit)
-    local maxPoints = math.max(tab1, tab2, tab3)
-    
-    if class == "DRUID" then
-        if maxPoints == tab1 then return "Balance"     -- Caster (Moonkin)
-        elseif maxPoints == tab2 then return "Feral"   -- Melee/Tank
-        else return "Restoration" end                  -- Healer
-    elseif class == "SHAMAN" then
-        if maxPoints == tab1 then return "Elemental"   -- Caster
-        elseif maxPoints == tab2 then return "Enhancement" -- Melee
-        else return "Restoration" end                  -- Healer
-    elseif class == "PALADIN" then
-        if maxPoints == tab1 then return "Holy"        -- Healer
-        elseif maxPoints == tab2 then return "Protection" -- Tank
-        else return "Retribution" end                  -- Melee
-    end
-    
-    return nil -- Keine Hybridklasse oder unerkannt
+    return nil
 end
 local function GetFlaskForClass(unit)
     local _, class = UnitClass(unit)
