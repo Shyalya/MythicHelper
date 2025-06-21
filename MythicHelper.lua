@@ -29,6 +29,85 @@ local auren = {
     { name = "Mythic Aura of Devotion", icon = "Interface\\Icons\\spell_holy_revivechampion" },
     { name = "Mythic Aura of Healing Orbs", icon = "Interface\\Icons\\spell_arcane_portalshattrath" }
 }
+
+-- Diese Funktion muss vor einem Kampf ausgeführt werden!
+local function GetSpecForHybrid(unit)
+    if not CanInspect(unit) then return nil end
+    
+    NotifyInspect(unit)
+    
+    -- Anzahl der Punkte in jedem Talentbaum
+    local tab1, tab2, tab3 = 0, 0, 0
+    for i = 1, MAX_TALENT_TABS do
+        for j = 1, GetNumTalents(i, false, false) do
+            local _, _, _, _, currRank = GetTalentInfo(i, j, false, false)
+            if i == 1 then tab1 = tab1 + currRank
+            elseif i == 2 then tab2 = tab2 + currRank
+            else tab3 = tab3 + currRank end
+        end
+    end
+    
+    -- Welcher Baum hat die meisten Punkte?
+    local _, class = UnitClass(unit)
+    local maxPoints = math.max(tab1, tab2, tab3)
+    
+    if class == "DRUID" then
+        if maxPoints == tab1 then return "Balance"     -- Caster (Moonkin)
+        elseif maxPoints == tab2 then return "Feral"   -- Melee/Tank
+        else return "Restoration" end                  -- Healer
+    elseif class == "SHAMAN" then
+        if maxPoints == tab1 then return "Elemental"   -- Caster
+        elseif maxPoints == tab2 then return "Enhancement" -- Melee
+        else return "Restoration" end                  -- Healer
+    elseif class == "PALADIN" then
+        if maxPoints == tab1 then return "Holy"        -- Healer
+        elseif maxPoints == tab2 then return "Protection" -- Tank
+        else return "Retribution" end                  -- Melee
+    end
+    
+    return nil -- Keine Hybridklasse oder unerkannt
+end
+local function GetFlaskForClass(unit)
+    local _, class = UnitClass(unit)
+    
+    -- Klare Melee/Physische DPS-Klassen
+    if class == "WARRIOR" or 
+       class == "ROGUE" or 
+       class == "HUNTER" or 
+       class == "DEATHKNIGHT" then
+        return "Flask of the Endless Rage"
+    
+    -- Klare Caster-Klassen
+    elseif class == "MAGE" or 
+           class == "WARLOCK" then
+        return "Flask of the Frostwyrm"
+    
+    -- Hybridklassen basierend auf Spec
+    elseif class == "DRUID" or class == "SHAMAN" or class == "PALADIN" or class == "PRIEST" then
+        local spec = GetSpecForHybrid(unit)
+        
+        -- Caster-Specs
+        if spec == "Balance" or spec == "Elemental" or spec == "Shadow" then
+            return "Flask of the Frostwyrm"
+        
+        -- Melee-DPS-Specs
+        elseif spec == "Feral" or spec == "Enhancement" or spec == "Retribution" then
+            return "Flask of the Endless Rage"
+        
+        -- Tank-Specs
+        elseif spec == "Protection" then
+            return "Flask of the Endless Rage" -- Optional: Tanks
+            
+        -- Heiler-Specs oder unbekannt
+        else
+            return "Flask of the Frostwyrm" -- Für Heiler besser
+        end
+    end
+    
+    -- Fallback
+    return "Flask of the North"
+end
+
 -- Utility Buttons: 3rd column (right of Potion)
 local utilityButtons = {
     {
@@ -49,10 +128,9 @@ local utilityButtons = {
     {
         name = "Flask",
         icon = "Interface\\Icons\\inv_alchemy_endlessflask_05",
-        message = "u flask of the north"
-    }
+        message = "SPECIAL_FLASK"  -- Spezialwert als Marker
 }
-
+}
 
 -- Mapping für kleine Klassenicons (WotLK 3.3.5)
 local CLASS_ICON_TCOORDS = {
@@ -422,10 +500,44 @@ for i, btnData in ipairs(utilityButtons) do
 
     btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     btn:SetScript("OnClick", function()
-        if GetNumRaidMembers() > 0 then
-            SendChatMessage(btnData.message, "RAID")
-        elseif GetNumPartyMembers() > 0 then
-            SendChatMessage(btnData.message, "PARTY")
+        if btnData.message == "SPECIAL_FLASK" then
+            -- Spezieller Fall: An jeden Spieler individuellen Flask senden
+            if GetNumRaidMembers() > 0 then
+                for i = 1, GetNumRaidMembers() do
+                    local name = GetRaidRosterInfo(i)
+                    local unit = "raid"..i
+                    if name and UnitExists(unit) then
+                        local flask = GetFlaskForClass(unit)
+                        SendChatMessage("u " .. flask, "WHISPER", nil, name)
+                        print("Sent to " .. name .. ": use " .. flask)
+                    end
+                end
+            elseif GetNumPartyMembers() > 0 then
+                for i = 1, GetNumPartyMembers() do
+                    local unit = "party"..i
+                    local name = UnitName(unit)
+                    if name and UnitExists(unit) then
+                        local flask = GetFlaskForClass(unit)
+                        SendChatMessage("u " .. flask, "WHISPER", nil, name)
+                        print("Sent to " .. name .. ": use " .. flask)
+                    end
+                end
+                -- Auch dem Spieler selbst
+                local flask = GetFlaskForClass("player")
+                SendChatMessage("u " .. flask, "WHISPER", nil, UnitName("player"))
+                print("Self: use " .. flask)
+            end
+        else
+            -- Standard-Button-Verhalten für andere Buttons
+            local msg = type(btnData.message) == "function" 
+                      and btnData.message("target")
+                      or btnData.message
+                      
+            if GetNumRaidMembers() > 0 then
+                SendChatMessage(msg, "RAID")
+            elseif GetNumPartyMembers() > 0 then
+                SendChatMessage(msg, "PARTY")
+            end
         end
     end)
 end
@@ -643,7 +755,6 @@ specialWhisperButton:SetScript("OnEnter", function(self)
     GameTooltip:Show()
 end)
 specialWhisperButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
 
 -- Überprüfen, ob das Addon geladen werden soll
 local function CanLoadMythicHelper()
@@ -1006,6 +1117,19 @@ changeMainButton:SetScript("OnClick", function()
     inputFrame:Show()
     AdjustFrameHeight()
 end)
+
+-- Eventuell hilfreich: Cache-System für Klassen-Specs
+local specCache = {}
+
+local function GetCachedSpecForUnit(unit)
+    local name = UnitName(unit)
+    if name and specCache[name] then return specCache[name] end
+    
+    local spec = GetSpecForHybrid(unit)
+    if spec and name then specCache[name] = spec end
+    return spec
+end
+
 
 
 
