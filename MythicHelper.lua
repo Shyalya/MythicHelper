@@ -84,12 +84,12 @@ local function GetFlaskForClass(unit)
        class == "ROGUE" or 
        class == "HUNTER" or 
        class == "DEATHKNIGHT" then
-        return "Flask of the Endless Rage"
+        return "Flask of Endless Rage"
     
     -- Klare Caster-Klassen
     elseif class == "MAGE" or 
            class == "WARLOCK" then
-        return "Flask of the Frostwyrm"
+        return "Flask of the Frost Wyrm"
     
     -- Hybridklassen basierend auf Spec
     elseif class == "DRUID" or class == "SHAMAN" or class == "PALADIN" or class == "PRIEST" then
@@ -97,19 +97,19 @@ local function GetFlaskForClass(unit)
         
         -- Caster-Specs
         if spec == "Balance" or spec == "Elemental" or spec == "Shadow" then
-            return "Flask of the Frostwyrm"
+            return "Flask of the Frost Wyrm"
         
         -- Melee-DPS-Specs
         elseif spec == "Feral" or spec == "Enhancement" or spec == "Retribution" then
-            return "Flask of the Endless Rage"
+            return "Flask of Endless Rage"
         
         -- Tank-Specs
         elseif spec == "Protection" then
-            return "Flask of the Endless Rage" -- Optional: Tanks
+            return "Flask of Endless Rage" -- Optional: Tanks
             
         -- Heiler-Specs oder unbekannt
         else
-            return "Flask of the Frostwyrm" -- Für Heiler besser
+            return "Flask of the Frost Wyrm" -- Für Heiler besser
         end
     end
     
