@@ -75,6 +75,7 @@ local function GetSpecForHybrid(unit)
     
     return nil
 end
+end
 local function GetFlaskForClass(unit)
     local _, class = UnitClass(unit)
     
@@ -114,6 +115,17 @@ local function GetFlaskForClass(unit)
     
     -- Fallback
     return "Flask of the North"
+    end
+    local specCache = {}
+
+local function GetCachedSpecForUnit(unit)
+    local name = UnitName(unit)
+    if name and specCache[name] then return specCache[name] end
+    
+    local spec = GetSpecForHybrid(unit)
+    if spec and name then specCache[name] = spec end
+    return spec
+
 end
 
 -- Utility Buttons: 3rd column (right of Potion)
@@ -1126,17 +1138,7 @@ changeMainButton:SetScript("OnClick", function()
     AdjustFrameHeight()
 end)
 
--- Eventuell hilfreich: Cache-System für Klassen-Specs
-local specCache = {}
 
-local function GetCachedSpecForUnit(unit)
-    local name = UnitName(unit)
-    if name and specCache[name] then return specCache[name] end
-    
-    local spec = GetSpecForHybrid(unit)
-    if spec and name then specCache[name] = spec end
-    return spec
-end
 
 
 
