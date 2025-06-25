@@ -18,6 +18,49 @@ frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 frame.title:SetPoint("TOP", frame, "TOP", 0, -6)
 frame.title:SetText("Mythic Helper")
 
+-- Create independent buff warning frame (stays visible when main window is closed)
+local buffWarningFrame = CreateFrame("Frame", "MythicHelperBuffWarning", UIParent)
+buffWarningFrame:SetSize(400, 50)
+buffWarningFrame:SetPoint("TOP", UIParent, "TOP", 0, -100) -- Position at top center of screen
+buffWarningFrame:SetFrameStrata("HIGH") -- Make sure it's visible above other UI elements
+buffWarningFrame:SetFrameLevel(100) -- High frame level
+
+-- Add background for better visibility
+buffWarningFrame:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 16, edgeSize = 8,
+    insets = { left = 2, right = 2, top = 2, bottom = 2 }
+})
+buffWarningFrame:SetBackdropColor(0, 0, 0, 0.8) -- Semi-transparent black background
+buffWarningFrame:SetBackdropBorderColor(1, 0, 0, 1) -- Red border
+
+-- Buff warning text
+buffWarningFrame.text = buffWarningFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+buffWarningFrame.text:SetPoint("CENTER", buffWarningFrame, "CENTER", 0, 0)
+buffWarningFrame.text:SetText("")
+buffWarningFrame.text:SetTextColor(1, 0, 0, 1) -- Red color
+buffWarningFrame:Hide() -- Start hidden
+
+-- Make the frame draggable
+buffWarningFrame:SetMovable(true)
+buffWarningFrame:EnableMouse(true)
+buffWarningFrame:RegisterForDrag("LeftButton")
+buffWarningFrame:SetScript("OnDragStart", buffWarningFrame.StartMoving)
+buffWarningFrame:SetScript("OnDragStop", buffWarningFrame.StopMovingOrSizing)
+
+-- Add close button to the buff warning frame
+local buffWarningCloseButton = CreateFrame("Button", nil, buffWarningFrame, "UIPanelCloseButton")
+buffWarningCloseButton:SetSize(16, 16)
+buffWarningCloseButton:SetPoint("TOPRIGHT", buffWarningFrame, "TOPRIGHT", -2, -2)
+buffWarningCloseButton:SetScript("OnClick", function() 
+    buffWarningFrame:Hide() 
+end)
+
+-- Store reference to the independent warning frame
+frame.buffWarning = buffWarningFrame.text
+frame.buffWarningFrame = buffWarningFrame
+
 -- 2-Spalten-Layout für Auren (Passe Y-Offset an, damit Buttons unter der Überschrift starten)
 local auren = {
     { name = "Mythic Aura of Resistance", icon = "Interface\\Icons\\ability_druid_naturalperfection" },
@@ -29,6 +72,256 @@ local auren = {
     { name = "Mythic Aura of Devotion", icon = "Interface\\Icons\\spell_holy_revivechampion" },
     { name = "Mythic Aura of Healing Orbs", icon = "Interface\\Icons\\spell_arcane_portalshattrath" }
 }
+
+-- Global variables for character selection buttons
+mhnameButtons = {}
+
+-- Global timer variables
+heroismCastEnd = 0
+heroismCD = 0
+heroismCaster = ""
+potionCastEnd = 0
+potionCD = 0
+potionCaster = ""
+
+-- Utility Buttons: 3rd column (right of Potion)
+local utilityButtons = {
+    {
+        name = "No Rest",
+        icon = "Interface\\Icons\\inv_drink_24_sealwhey",
+        message = "nc -food"
+    },
+    {
+        name = "No Loot",
+        icon = "Interface\\Icons\\inv_misc_bag_11",
+        message = "nc -loot"
+    },
+    {
+        name = "Don't Avoid AoE",
+        icon = "Interface\\Icons\\ability_rogue_quickrecovery",
+        message = "co -avoid aoe"
+    },
+    {
+        name = "Flask",
+        icon = "Interface\\Icons\\inv_alchemy_endlessflask_05",
+        message = "SPECIAL_FLASK"  -- Spezialwert als Marker
+    },
+    {
+        name = "Hunter AC",
+        icon = "Interface\\Icons\\spell_shadow_summonfelhunter",
+        message = "MANUAL_HUNTER_AC"  -- Spezialwert für manuelles Hunter Animal Companion
+    },
+    {
+        name = "Tank Perk",
+        icon = "Interface\\Icons\\inv_shield_32",
+        message = "MANUAL_TANK_PERK"  -- Spezialwert für manuelle Tank Perks
+    },
+    {
+        name = "Priest Holy",
+        icon = "Interface\\Icons\\spell_holy_powerwordbarrier",
+        message = "MANUAL_PRIEST_HOLY"  -- Spezialwert für Priest Holy Form Perk
+    }
+}
+
+-- Function to remove old character selection buttons
+local function RemoveOldButtons()
+    for _, btn in ipairs(mhnameButtons) do
+        btn:Hide()
+        btn:SetParent(nil)
+    end    wipe(mhnameButtons)
+end
+
+-- WotLK-compatible timer function (C_Timer.After replacement)
+local function DelayedCallback(delay, func)
+    local frame = CreateFrame("Frame")
+    local elapsed = 0
+    frame:SetScript("OnUpdate", function(self, delta)
+        elapsed = elapsed + delta
+        if elapsed >= delay then
+            func()
+            self:SetScript("OnUpdate", nil)
+        end
+    end)
+end
+
+-- Button dimensions and spacing
+local buttonWidth, buttonHeight, buttonSpacing = 70, 44, 6
+local colSpacing = 10
+
+-- Global buff target variable
+local buffTarget = nil
+
+-- Function to get current buff target (with fallback)
+local function GetBuffTarget()
+    return buffTarget or MythicHelperMainName
+end
+
+-- Function to set buff target
+local function SetBuffTarget(name)
+    buffTarget = name
+    MythicHelperMainName = name
+    if UpdateMainName then
+        UpdateMainName()
+    end
+end
+
+-- Main-Name-Anzeige und Update-Funktion (defined early)
+mainNameText = nil  -- Will be created later
+local function UpdateMainName()
+    local target = GetBuffTarget()
+    if mainNameText and target and target ~= "" then
+        mainNameText:SetText("Main: " .. target)
+        mainNameText:Show()
+    elseif mainNameText then
+        mainNameText:SetText("")
+        mainNameText:Hide()
+    end
+end
+
+-- Helper function that needs to be defined early
+local function AdjustFrameHeight()    if mainUI:IsShown() then
+        local rows = 4
+        local auraRows = math.ceil(#auren / 2)
+        local utilRows = math.min(4, math.ceil(#utilityButtons / 2)) + 1  -- Max 4 Reihen für Utility + 1 für SpellBlocker
+        local headerSpace = 28 + 26
+        local aurasHeaderSpace = 26
+        local dividerSpace = 24
+        local cooldownHeader = 24
+        local cooldownButtons = buttonHeight + 8
+        local bottomButtons = 44
+        local padding = 24
+
+        -- Dynamische Zeilen für Spellblocks
+        local groupSize = 0
+        if GetNumRaidMembers() > 0 then
+            groupSize = GetNumRaidMembers()
+        elseif GetNumPartyMembers() > 0 then
+            groupSize = GetNumPartyMembers() + 1 -- +1 für den Spieler selbst
+        else
+            groupSize = 1
+        end
+        local maxPerCol = 5
+        local spellblockRows = math.min(maxPerCol, groupSize)
+
+        local maxRowsAll = math.max(rows, spellblockRows, utilRows, auraRows)
+        local buttonBlock = maxRowsAll * (buttonHeight + buttonSpacing)
+
+        local totalHeight = headerSpace + aurasHeaderSpace + buttonBlock + dividerSpace + cooldownHeader + cooldownButtons + bottomButtons + padding
+
+        -- Passe die Breite für 4 Spalten an:
+        local totalWidth = 16 + 4*buttonWidth + 4*colSpacing + 16
+        frame:SetWidth(totalWidth)
+        frame:SetHeight(totalHeight)
+    elseif inputFrame:IsShown() then
+        frame:SetHeight(220)
+        frame:SetWidth(360)
+    else
+        frame:SetHeight(80)
+        frame:SetWidth(260)
+    end
+end
+
+-- Function to show character selection buttons
+local function ShowNameButtons()
+    -- Vorherige Buttons entfernen
+    RemoveOldButtons()
+
+    -- Setze das Hauptfenster auf eine große, feste Größe für die Auswahl
+    frame:SetWidth(280)
+    frame:SetHeight(460)
+
+    -- Erstelle eine Tabelle mit 10 leeren Feldern
+    local names = {}
+    for i = 1, 10 do
+        names[i] = ""
+    end
+    
+    -- Fülle die Tabelle mit den Namen der Gruppenmitglieder
+    local count = 1
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name and name ~= "" then
+                names[count] = name
+                count = count + 1
+                if count > 10 then break end
+            end
+        end
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local name = UnitName("party"..i)
+            if name and name ~= "" then
+                names[count] = name
+                count = count + 1
+                if count > 10 then break end
+            end
+        end
+        -- Spieler selbst hinzufügen
+        if count <= 10 then
+            local playerName = UnitName("player")
+            if playerName then
+                names[count] = playerName
+                count = count + 1
+            end
+        end
+    else
+        -- Solo - nur Spieler selbst
+        local playerName = UnitName("player")
+        if playerName then
+            names[1] = playerName
+        end
+    end
+
+    -- Jetzt enthält 'names' immer 10 Felder, die ersten sind ggf. mit Namen befüllt
+
+    -- Buttons für alle 10 Felder anlegen
+    local btnWidth, btnHeight = 120, 22
+    local btnSpacingX, btnSpacingY = 16, 6
+    local maxRows = 5 -- 5 Reihen pro Spalte
+    
+    for i = 1, 10 do
+        local name = names[i]
+        local btn = CreateFrame("Button", nil, inputFrame, "GameMenuButtonTemplate")
+        btn:SetSize(btnWidth, btnHeight)
+        
+        -- Berechne Spalte und Reihe
+        local col = math.floor((i-1) / maxRows)
+        local row = (i-1) % maxRows
+        
+        btn:SetPoint(
+            "TOPLEFT",
+            inputLabel,
+            "BOTTOMLEFT",
+            col * (btnWidth + btnSpacingX),
+            -20 - row * (btnHeight + btnSpacingY)
+        )
+          if name and name ~= "" then
+            btn:SetText(name)
+            btn:SetScript("OnClick", function()
+                SetBuffTarget(name)
+                mainUI:Show()
+                inputFrame:Hide()
+                AdjustFrameHeight()
+            end)
+            btn:Enable()
+        else
+            btn:SetText("-")
+            btn:SetScript("OnClick", nil)
+            btn:Disable()
+        end
+        btn:Show()
+        table.insert(mhnameButtons, btn)
+    end
+
+    inputFrame:ClearAllPoints()
+    inputFrame:SetAllPoints(frame)
+end
+
+-- Function to check if addon should be loaded
+local function CanLoadMythicHelper()
+    local inInstance, instanceType = IsInInstance()
+    return inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario" or instanceType == "pvp")
+end
 
 -- Diese Funktion muss vor einem Kampf ausgeführt werden!
 local function GetSpecForHybrid(unit)
@@ -50,14 +343,33 @@ local function GetSpecForHybrid(unit)
         
         local _, class = UnitClass(unit)
         local maxPoints = math.max(tab1, tab2, tab3)
-        print("DEBUG Self: "..UnitName(unit).." - Talent Points: "..tab1.."/"..tab2.."/"..tab3)
         
-        -- Rest der Funktion für die Klassen-Auswertung...
+        -- Spezialisierung basierend auf Klasse und höchsten Talent-Punkten
         if class == "DRUID" then
             if maxPoints == tab1 then return "Balance"     -- Caster
             elseif maxPoints == tab2 then return "Feral"   -- Melee/Tank
             else return "Restoration" end                  -- Healer
-        -- usw. für andere Klassen...
+        elseif class == "PALADIN" then
+            if maxPoints == tab1 then return "Holy"        -- Healer
+            elseif maxPoints == tab2 then return "Protection" -- Tank
+            else return "Retribution" end                  -- Melee DPS
+        elseif class == "WARRIOR" then
+            if maxPoints == tab1 then return "Arms"        -- DPS
+            elseif maxPoints == tab2 then return "Fury"    -- DPS
+            else return "Protection" end                   -- Tank
+        elseif class == "DEATHKNIGHT" then
+            if maxPoints == tab1 then return "Blood"       -- Tank/DPS
+            elseif maxPoints == tab2 then return "Frost"   -- DPS
+            else return "Unholy" end                       -- DPS
+        elseif class == "SHAMAN" then
+            if maxPoints == tab1 then return "Elemental"   -- Caster DPS
+            elseif maxPoints == tab2 then return "Enhancement" -- Melee DPS
+            else return "Restoration" end                  -- Healer
+        elseif class == "PRIEST" then
+            if maxPoints == tab1 then return "Discipline"  -- Healer/Support
+            elseif maxPoints == tab2 then return "Holy"    -- Healer
+            else return "Shadow" end                       -- Caster DPS
+        end
         
     -- Für andere Charaktere: Default-Werte nach Klasse verwenden
     else
@@ -70,12 +382,16 @@ local function GetSpecForHybrid(unit)
             return "Discipline" -- Standard-Annahme für Priester
         elseif class == "PALADIN" then
             return "Holy"       -- Standard-Annahme für Paladine
+        elseif class == "DEATHKNIGHT" then
+            return "Frost"      -- Standard-Annahme für Death Knights (DPS)
+        elseif class == "WARRIOR" then
+            return "Arms"       -- Standard-Annahme für Krieger (DPS)
         end
     end
     
     return nil
 end
-end
+
 local function GetFlaskForClass(unit)
     local _, class = UnitClass(unit)
     
@@ -115,8 +431,9 @@ local function GetFlaskForClass(unit)
     
     -- Fallback
     return "Flask of the North"
-    end
-    local specCache = {}
+end
+
+local specCache = {}
 
 local function GetCachedSpecForUnit(unit)
     local name = UnitName(unit)
@@ -127,30 +444,6 @@ local function GetCachedSpecForUnit(unit)
     return spec
 
 end
-
--- Utility Buttons: 3rd column (right of Potion)
-local utilityButtons = {
-    {
-        name = "No Rest",
-        icon = "Interface\\Icons\\inv_drink_24_sealwhey",
-        message = "nc -food"
-    },
-    {
-        name = "No Loot",
-        icon = "Interface\\Icons\\inv_misc_bag_11",
-        message = "nc -loot"
-    },
-    {
-        name = "Don't Avoid AoE",
-        icon = "Interface\\Icons\\ability_rogue_quickrecovery",
-        message = "co -avoid aoe"
-    },
-    {
-        name = "Flask",
-        icon = "Interface\\Icons\\inv_alchemy_endlessflask_05",
-        message = "SPECIAL_FLASK"  -- Spezialwert als Marker
-}
-}
 
 -- Mapping für kleine Klassenicons (WotLK 3.3.5)
 local CLASS_ICON_TCOORDS = {
@@ -185,176 +478,10 @@ closeButton:SetSize(20, 20)
 closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
 closeButton:SetScript("OnClick", function() frame:Hide() end)
 
-local buffTarget = nil
-local mainUI = nil
-
--- Formular-Frame für Charakternamen
-local inputFrame = CreateFrame("Frame", nil, frame)
-inputFrame:SetAllPoints(frame)
-
-local inputLabel = inputFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-inputLabel:SetPoint("TOP", inputFrame, "TOP", 0, -38)
-inputLabel:SetText("Select Character with the highest Aura Ranks:")
-
--- Passe das Frame an die neue Höhe an
-
-local buttonWidth, buttonHeight, buttonSpacing = 70, 44, 6
-local colSpacing = 10
-
-local function AdjustFrameHeight()
-    if mainUI:IsShown() then
-        local rows = 4
-        local auraRows = math.ceil(#auren / 2)
-        local utilRows = #utilityButtons
-        local headerSpace = 28 + 26
-        local aurasHeaderSpace = 26
-        local dividerSpace = 24
-        local cooldownHeader = 24
-        local cooldownButtons = buttonHeight + 8
-        local bottomButtons = 44
-        local padding = 24
-
-        -- Dynamische Zeilen für Spellblocks
-        local groupSize = 0
-        if GetNumRaidMembers() > 0 then
-            groupSize = GetNumRaidMembers()
-        elseif GetNumPartyMembers() > 0 then
-            groupSize = GetNumPartyMembers() + 1 -- +1 für den Spieler selbst
-        else
-            groupSize = 1
-        end
-        local maxPerCol = 5
-        local spellblockRows = math.min(maxPerCol, groupSize)
-
-        local maxRowsAll = math.max(rows, spellblockRows, utilRows, auraRows)
-        local buttonBlock = maxRowsAll * (buttonHeight + buttonSpacing)
-
-        local totalHeight = headerSpace + aurasHeaderSpace + buttonBlock + dividerSpace + cooldownHeader + cooldownButtons + bottomButtons + padding
-
-        -- Passe die Breite für 4 Spalten an:
-        local totalWidth = 16 + 3*buttonWidth + 3*colSpacing + 16
-        frame:SetWidth(totalWidth)
-        frame:SetHeight(totalHeight)
-    elseif inputFrame:IsShown() then
-        frame:SetHeight(220)
-        frame:SetWidth(360)
-    else
-        frame:SetHeight(80)
-        frame:SetWidth(260)
-    end
-end
-
 -- Haupt-UI (wird erst nach Eingabe angezeigt)
 mainUI = CreateFrame("Frame", nil, frame)
 mainUI:SetAllPoints(frame)
 mainUI:Hide()
-
--- Main-Name-Anzeige ganz oben unter dem Fenstertitel
-local mainNameText = nil
-mainNameText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-mainNameText:SetPoint("TOP", mainUI, "TOP", 0, -28)
-mainNameText:SetText("")
-
--- Funktion zum Aktualisieren des Main-Namens
-local function UpdateMainName()
-    if buffTarget and buffTarget ~= "" then
-        mainNameText:SetText("Main: " .. buffTarget)
-        mainNameText:Show()
-    else
-        mainNameText:SetText("")
-        mainNameText:Hide()
-    end
-end
-
-
--- Passe ShowNameButtons an:
-local mhnameButtons = {}
-local function ShowNameButtons()
-    -- Vorherige Buttons entfernen
-    for _, btn in ipairs(mhnameButtons) do
-        btn:Hide()
-        btn:SetParent(nil)
-    end
-    wipe(mhnameButtons)
-
-    -- Setze das Hauptfenster auf eine große, feste Größe für die Auswahl
-    frame:SetWidth(180)
-    frame:SetHeight(420)
-
-    -- Erstelle eine Tabelle mit 10 leeren Feldern
-    local names = {}
-    for i = 1, 10 do
-        names[i] = ""
-    end
-
-    -- Fülle die Tabelle mit den Namen der Gruppenmitglieder
-    local count = 1
-    if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-            local name = GetRaidRosterInfo(i)
-            if name and name ~= "" then
-                names[count] = name
-                count = count + 1
-            end
-        end
-    elseif GetNumPartyMembers() > 0 then
-        for i = 1, GetNumPartyMembers() do
-            local name = UnitName("party"..i)
-            if name and name ~= "" then
-                names[count] = name
-                count = count + 1
-            end
-        end
-        names[count] = UnitName("player")
-    elseif UnitName("player") then
-        names[count] = UnitName("player")
-    end
-
-    -- Jetzt enthält 'names' immer 10 Felder, die ersten sind ggf. mit Namen befüllt
-
-    -- Beispiel: Buttons für alle 10 Felder anlegen
-    local btnWidth, btnHeight = 120, 22
-    local btnSpacingX, btnSpacingY = 16, 6
-    local maxRows = 5 -- oder 10, je nach gewünschtem Layout
-    for i = 1, 10 do
-        local name = names[i]
-        local btn = CreateFrame("Button", nil, inputFrame, "GameMenuButtonTemplate")
-        btn:SetSize(btnWidth, btnHeight)
-        -- Passe die Positionierung ggf. an
-        local col = math.floor((i-1) / maxRows)
-        local row = (i-1) % maxRows
-        btn:SetPoint(
-            "TOPLEFT",
-            inputLabel,
-            "BOTTOMLEFT",
-            col * (btnWidth + btnSpacingX),
-            -8 - row * (btnHeight + btnSpacingY)
-        )
-        if name ~= "" then
-            btn:SetText(name)
-            btn:SetScript("OnClick", function()
-                buffTarget = name
-                MythicHelperMainName = name
-                frame:SetWidth(260)
-                frame:SetHeight(80)
-                mainUI:Show()
-                AdjustFrameHeight()
-                UpdateMainName()
-                inputFrame:Hide()   
-            end)
-            btn:Enable()
-        else
-            btn:SetText("-")
-            btn:SetScript("OnClick", nil)
-            btn:Disable()
-        end
-        btn:Show()
-        table.insert(mhnameButtons, btn)
-    end
-
-    inputFrame:ClearAllPoints()
-    inputFrame:SetAllPoints(frame)
-end
 
 
 
@@ -372,7 +499,6 @@ local aurasHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 aurasHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16, -54)
 aurasHeader:SetText("Mythic Auras")
 
-
 local auraButtons = {}
 for i, aura in ipairs(auren) do
     local col = ((i-1) % 2)
@@ -387,18 +513,17 @@ for i, aura in ipairs(auren) do
     btn.icon:SetTexture(aura.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
 
     local shortName = aura.name:match("Mythic Aura of (.+)")
-    btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     btn.text:SetPoint("TOP", btn.icon, "BOTTOM", 0, -1)
     btn.text:SetText(shortName or aura.name)
-    btn.text:SetTextColor(1, 0.82, 0)
-
-    btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    btn.text:SetTextColor(1, 0.82, 0)    btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     btn:SetScript("OnClick", function()
-        if buffTarget then
-            SendChatMessage("cast "..aura.name, "WHISPER", nil, buffTarget)
-            print("Aura buff '"..aura.name.."' sent to "..buffTarget..".")
+        local target = GetBuffTarget()
+        if target and target ~= "" then
+            SendChatMessage("cast "..aura.name, "WHISPER", nil, target)
+            print("Aura buff '"..aura.name.."' sent to "..target..".")
         else
-            print("No target selected!")
+            print("No target selected! Please choose a main character first.")
         end
     end)
     auraButtons[i] = btn
@@ -425,7 +550,7 @@ heroismButton.icon:SetSize(28, 28)
 heroismButton.icon:SetPoint("TOP", heroismButton, "TOP", 0, -2)
 heroismButton.icon:SetTexture(heroismIconPath)
 
-heroismButton.text = heroismButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+heroismButton.text = heroismButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 heroismButton.text:SetPoint("TOP", heroismButton.icon, "BOTTOM", 0, -1)
 heroismButton.text:SetText("Heroism")
 heroismButton.text:SetTextColor(1, 0.82, 0)
@@ -449,11 +574,11 @@ heroismCastBar:SetStatusBarColor(0, 1, 0) -- Grün für Laufzeit
 heroismCastBar:SetMinMaxValues(0, 40)
 heroismCastBar:Hide()
 
-local heroismUserText = heroismButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+local heroismUserText = heroismButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 heroismUserText:SetPoint("TOP", heroismCDBar, "BOTTOM", 0, -2)
 heroismUserText:SetText("")
 
-local heroismCasterText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+local heroismCasterText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 heroismCasterText:SetPoint("LEFT", heroismCDBar, "LEFT", 2, 0)
 heroismCasterText:SetText("")
 
@@ -468,7 +593,7 @@ potionButton.icon:SetSize(28, 28)
 potionButton.icon:SetPoint("TOP", potionButton, "TOP", 0, -2)
 potionButton.icon:SetTexture(potionIconPath)
 
-potionButton.text = potionButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+potionButton.text = potionButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 potionButton.text:SetPoint("TOP", potionButton.icon, "BOTTOM", 0, -1)
 potionButton.text:SetText("Potion")
 potionButton.text:SetTextColor(1, 0.82, 0)
@@ -492,34 +617,86 @@ potionCastBar:SetStatusBarColor(0, 1, 0) -- Grün für Laufzeit
 potionCastBar:SetMinMaxValues(0, 60)
 potionCastBar:Hide()
 
-local potionCasterText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+local potionCasterText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 potionCasterText:SetPoint("LEFT", potionCDBar, "LEFT", 2, 0)
 potionCasterText:SetText("")
-
 
 -- Überschrift für die dritte Spalte (Bot Utilities) auf gleiche Höhe wie Auren
 local botUtilsHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 botUtilsHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), -54)
 botUtilsHeader:SetText("Bot Utilities")
 
--- Utility Buttons: Starten auf gleicher Höhe wie die Auren
+-- Utility Buttons: In 2 Spalten anordnen (max 4 pro Spalte)
 for i, btnData in ipairs(utilityButtons) do
     local btn = CreateFrame("Button", nil, mainUI)
     btn:SetSize(buttonWidth, buttonHeight)
-    btn:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), -74 - (i-1)*(buttonHeight+buttonSpacing))
+    
+    -- Berechne Spalte und Reihe (max 4 pro Spalte)
+    local col = math.floor((i-1) / 4)  -- 0 für erste Spalte, 1 für zweite Spalte
+    local row = (i-1) % 4              -- 0-3 für die Reihen
+    
+    -- Position: Spalte 3 (col=0) oder Spalte 4 (col=1)
+    local xPos = 16 + (2 + col) * (buttonWidth + colSpacing)
+    local yPos = -74 - row * (buttonHeight + buttonSpacing)
+    
+    btn:SetPoint("TOPLEFT", mainUI, "TOPLEFT", xPos, yPos)
 
     btn.icon = btn:CreateTexture(nil, "ARTWORK")
     btn.icon:SetSize(28, 28)
     btn.icon:SetPoint("TOP", btn, "TOP", 0, -2)
     btn.icon:SetTexture(btnData.icon)
 
-    btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    btn.text:SetPoint("TOP", btn.icon, "BOTTOM", 0, -1)
-    btn.text:SetText(btnData.name)
+    btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn.text:SetPoint("TOP", btn.icon, "BOTTOM", 0, -1)    btn.text:SetText(btnData.name)
     btn.text:SetTextColor(1, 0.82, 0)
 
     btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-    btn:SetScript("OnClick", function()
+      -- Tooltips für Utility Buttons
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if btnData.message == "SPECIAL_FLASK" then
+            GameTooltip:SetText("Class-Specific Flasks", 1, 1, 1)
+            GameTooltip:AddLine("Sends appropriate flask to each player:", 0.7, 0.7, 1)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Melee/Physical DPS: Flask of Endless Rage", 1, 0.8, 0.6)
+            GameTooltip:AddLine("Caster DPS: Flask of the Frost Wyrm", 1, 0.8, 0.6)
+            GameTooltip:AddLine("Healers: Flask of the Frost Wyrm", 1, 0.8, 0.6)
+            GameTooltip:AddLine("Tanks: Flask of Endless Rage", 1, 0.8, 0.6)
+        elseif btnData.message == "MANUAL_HUNTER_AC" then
+            GameTooltip:SetText("Hunter Animal Companion", 1, 1, 1)
+            GameTooltip:AddLine("Sends Animal Companion (81594) to all hunters", 0.7, 0.7, 1)
+            GameTooltip:AddLine("Only sends to hunters who haven't received it yet", 1, 0.8, 0.6)
+            GameTooltip:AddLine("Useful for manually distributing to all hunters", 0.8, 0.8, 1)
+        elseif btnData.message == "MANUAL_TANK_PERK" then
+            GameTooltip:SetText("Tank Perks", 1, 1, 1)
+            GameTooltip:AddLine("Sends Shield of Destiny (81535) to all tanks", 0.7, 0.7, 1)
+            GameTooltip:AddLine("Works for: Blood DK, Prot Warrior, Prot Paladin, Feral Druid", 0.8, 0.8, 1)
+            GameTooltip:AddLine("Only sends to tanks who haven't received it yet", 1, 0.8, 0.6)
+        elseif btnData.message == "MANUAL_PRIEST_HOLY" then
+            GameTooltip:SetText("Priest Holy Form", 1, 1, 1)
+            GameTooltip:AddLine("Sends Holy Form (81099) to all priests", 0.7, 0.7, 1)
+            GameTooltip:AddLine("Only sends to priests who haven't received it yet", 1, 0.8, 0.6)
+            GameTooltip:AddLine("Useful for manually distributing to all priests", 0.8, 0.8, 1)
+        elseif btnData.message == "nc -food" then
+            GameTooltip:SetText("No Rest", 1, 1, 1)
+            GameTooltip:AddLine("Disables automatic food consumption", 0.7, 0.7, 1)
+            GameTooltip:AddLine("Prevents bots from eating unnecessarily", 1, 0.8, 0.6)
+        elseif btnData.message == "nc -loot" then
+            GameTooltip:SetText("No Loot", 1, 1, 1)
+            GameTooltip:AddLine("Disables automatic looting", 0.7, 0.7, 1)
+            GameTooltip:AddLine("Prevents bots from looting during combat", 1, 0.8, 0.6)
+        elseif btnData.message == "co -avoid aoe" then
+            GameTooltip:SetText("Don't Avoid AoE", 1, 1, 1)
+            GameTooltip:AddLine("Disables AoE avoidance behavior", 0.7, 0.7, 1)
+            GameTooltip:AddLine("Useful for stacking mechanics", 1, 0.8, 0.6)
+        else
+            GameTooltip:SetText(btnData.name, 1, 1, 1)
+            GameTooltip:AddLine("Bot utility command", 0.7, 0.7, 1)
+        end
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+      btn:SetScript("OnClick", function()
         if btnData.message == "SPECIAL_FLASK" then
             -- Spezieller Fall: An jeden Spieler individuellen Flask senden
             if GetNumRaidMembers() > 0 then
@@ -529,7 +706,6 @@ for i, btnData in ipairs(utilityButtons) do
                     if name and UnitExists(unit) then
                         local flask = GetFlaskForClass(unit)
                         SendChatMessage("u " .. flask, "WHISPER", nil, name)
-                        print("Sent to " .. name .. ": use " .. flask)
                     end
                 end
             elseif GetNumPartyMembers() > 0 then
@@ -539,14 +715,21 @@ for i, btnData in ipairs(utilityButtons) do
                     if name and UnitExists(unit) then
                         local flask = GetFlaskForClass(unit)
                         SendChatMessage("u " .. flask, "WHISPER", nil, name)
-                        print("Sent to " .. name .. ": use " .. flask)
                     end
                 end
                 -- Auch dem Spieler selbst
                 local flask = GetFlaskForClass("player")
                 SendChatMessage("u " .. flask, "WHISPER", nil, UnitName("player"))
-                print("Self: use " .. flask)
             end
+        elseif btnData.message == "MANUAL_HUNTER_AC" then
+            -- Hunter Animal Companion manuell senden
+            ManualSendHunterAnimalCompanion()
+        elseif btnData.message == "MANUAL_TANK_PERK" then
+            -- Tank Perks manuell senden
+            ManualSendTankPerks()
+        elseif btnData.message == "MANUAL_PRIEST_HOLY" then
+            -- Priest Holy Form manuell senden
+            ManualSendPriestHolyPerks()
         else
             -- Standard-Button-Verhalten für andere Buttons
             local msg = type(btnData.message) == "function" 
@@ -563,20 +746,74 @@ for i, btnData in ipairs(utilityButtons) do
 end
 
 -- Nach dem Erstellen aller Buttons und Balken:
-mainUI:Show()
 mainUI:SetScript("OnShow", function()
     AdjustFrameHeight()
 end)
 
--- Timer-Logik
-local heroismCastEnd, heroismCaster = 0, ""
-local potionCD, potionCastEnd, potionCaster = 0, 0, ""
-local potionCDPending = false
+-- Timer update function
+local function UpdateBars()
+    local now = GetTime()
+    -- Heroism
+    if heroismCastEnd and heroismCastEnd > now then
+        -- Laufzeit läuft (grüner Balken)
+        heroismCastBar:Show()
+        heroismCastBar:SetMinMaxValues(0, 40)
+        heroismCastBar:SetValue(heroismCastEnd - now)
+        heroismCDBar:Show()
+        heroismCDBar:SetMinMaxValues(0, 600)
+        heroismCDBar:SetValue(heroismCastEnd + 600 - now)
+        heroismButton:Disable()
+        heroismUserText:SetText("Heroism: "..(heroismCaster or ""))
+    elseif heroismCaster and heroismCaster ~= "" and heroismCastEnd and heroismCastEnd + 600 > now then
+        -- Cooldown läuft (roter balken)
+        heroismCastBar:Hide()
+        heroismCDBar:Show()
+        heroismCDBar:SetMinMaxValues(0, 600)
+        heroismCDBar:SetValue(heroismCastEnd + 600 - now)
+        heroismButton:Enable()
+        heroismUserText:SetText("Heroism: "..heroismCaster)
+    else
+        -- Kein balken
+        if heroismCastBar then heroismCastBar:Hide() end
+        if heroismCDBar then heroismCDBar:Hide() end
+        if heroismButton then heroismButton:Enable() end
+        if heroismUserText then heroismUserText:SetText("") end
+    end
+    -- Potion
+    if potionCD and potionCD > now then
+        if potionCDBar then
+            potionCDBar:Show()
+            potionCDBar:SetValue(potionCD - now)
+        end
+        if potionCasterText then potionCasterText:SetText(potionCaster or "") end
+    else
+        if potionButton then potionButton:Enable() end
+        if potionCDBar then potionCDBar:Hide() end
+        if potionCasterText then potionCasterText:SetText("") end
+    end
+    if potionCastEnd and potionCastEnd > now then
+        if potionCastBar then
+            potionCastBar:Show()
+            potionCastBar:SetValue(potionCastEnd - now)
+        end
+    else
+        if potionCastBar then potionCastBar:Hide() end
+    end
+end
 
--- Heroism-Queue-Logik
-local heroismQueue = {}
-local heroismQueueIndex = 1
+mainUI:SetScript("OnUpdate", UpdateBars)
 
+-- Create main name text display
+mainNameText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+mainNameText:SetPoint("TOP", mainUI, "TOP", 0, -28)
+mainNameText:SetText("")
+
+-- Timer variables (other supporting variables)
+potionCDPending = false
+heroismQueue = {}
+heroismQueueIndex = 1
+
+-- Heroism queue management
 local function FillHeroismQueue()
     wipe(heroismQueue)
     if GetNumRaidMembers() > 0 then
@@ -607,62 +844,26 @@ local function FillHeroismQueue()
     heroismQueueIndex = 1
 end
 
-local function UpdateBars()
-    local now = GetTime()
-    -- Heroism
-    if heroismCastEnd > now then
-        -- Laufzeit läuft (grüner Balken)
-        heroismCastBar:Show()
-        heroismCastBar:SetMinMaxValues(0, 40)
-        heroismCastBar:SetValue(heroismCastEnd - now)
-        heroismCDBar:Show()
-        heroismCDBar:SetMinMaxValues(0, 600)
-        heroismCDBar:SetValue(heroismCastEnd + 600 - now)
-        heroismButton:Disable()
-        heroismUserText:SetText("Heroism: "..heroismCaster)
-    elseif heroismCaster ~= "" and heroismCastEnd + 600 > now then
-        -- Cooldown läuft (roter balken)
-        heroismCastBar:Hide()
-        heroismCDBar:Show()
-        heroismCDBar:SetMinMaxValues(0, 600)
-        heroismCDBar:SetValue(heroismCastEnd + 600 - now)
-        heroismButton:Enable()
-        heroismUserText:SetText("Heroism: "..heroismCaster)
-    else
-        -- Kein balken
-        heroismCastBar:Hide()
-        heroismCDBar:Hide()
-        heroismButton:Enable()
-        heroismUserText:SetText("")
-    end
-    -- Potion
-    if potionCD > now then
-        potionCDBar:Show()
-        potionCDBar:SetValue(potionCD - now)
-        potionCasterText:SetText(potionCaster)
-    else
-        potionButton:Enable()
-        potionCDBar:Hide()
-        potionCasterText:SetText("")
-    end
-    if potionCastEnd > now then
-        potionCastBar:Show()
-        potionCastBar:SetValue(potionCastEnd - now)
-    else
-        potionCastBar:Hide()
-    end
-end
+-- Tooltip für Heroism Button
+heroismButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Mythic Heroism", 1, 1, 1)
+    GameTooltip:AddLine("Sends Heroism spell to next player in queue", 0.7, 0.7, 1)
+    GameTooltip:AddLine("Duration: 40 seconds", 0, 1, 0)
+    GameTooltip:AddLine("Cooldown: 10 minutes", 1, 0.5, 0)
+    GameTooltip:AddLine("Auto-rotates through group members", 0.7, 0.7, 1)
+    GameTooltip:Show()
+end)
+heroismButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-mainUI:SetScript("OnUpdate", UpdateBars)
-
+-- Set up button click handlers
 heroismButton:SetScript("OnClick", function()
     if #heroismQueue == 0 then FillHeroismQueue() end
     local nextUser = heroismQueue[heroismQueueIndex]
     if nextUser then
         SendChatMessage("cast "..heroismSpell, "WHISPER", nil, nextUser)
-        print("Heroism sent to "..nextUser..".")
         -- Heroism läuft jetzt NEU (immer überschreiben)
-        heroismCastEnd = GetTime() + 40 -- 30 Sekunden Laufzeit (anpassen falls nötig)
+        heroismCastEnd = GetTime() + 40 -- 40 Sekunden Laufzeit
         heroismCaster = nextUser
         heroismUserText:SetText("Heroism: "..nextUser)
         heroismButton:Disable()
@@ -679,24 +880,104 @@ heroismButton:SetScript("OnClick", function()
     end
 end)
 
+-- Tooltip für Potion Button
+potionButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Mythic Endless Assault Potion", 1, 1, 1)
+    GameTooltip:AddLine("Sends potion request to all group members", 0.7, 0.7, 1)
+    GameTooltip:AddLine("Duration: 60 seconds", 0, 1, 0)
+    GameTooltip:AddLine("Cooldown: 3 minutes", 1, 0.5, 0)
+    GameTooltip:AddLine("Use for DPS boost during encounters", 0.7, 0.7, 1)
+    GameTooltip:Show()
+end)
+potionButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 potionButton:SetScript("OnClick", function()
+    local potionSpell = "Mythic Endless Assault Potion"
     local sent = false
+    
+    -- Send to all group members
     if GetNumRaidMembers() > 0 then
-        SendChatMessage("u Mythic Endless Assault Potion", "RAID")
-        sent = true
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name and name ~= "" then
+                SendChatMessage("u "..potionSpell, "WHISPER", nil, name)
+                sent = true
+            end
+        end
     elseif GetNumPartyMembers() > 0 then
-        SendChatMessage("u Mythic Endless Assault Potion", "PARTY")
-        sent = true
-    end
-    if sent then
-        print("Potion request sent to your group.")
-        potionCastEnd = GetTime() + 60
-        potionCD = GetTime() + 180 -- << Cooldown startet SOFORT!
+        for i = 1, GetNumPartyMembers() do
+            local name = UnitName("party"..i)
+            if name and name ~= "" then
+                SendChatMessage("u "..potionSpell, "WHISPER", nil, name)
+                sent = true
+            end
+        end
+        -- Send to player as well
+        local playerName = UnitName("player")
+        if playerName then
+            SendChatMessage("u "..potionSpell, "WHISPER", nil, playerName)
+            sent = true
+        end
     else
-        print("No group found!")
+        -- Solo
+        local playerName = UnitName("player")
+        if playerName then
+            SendChatMessage("u "..potionSpell, "WHISPER", nil, playerName)
+            sent = true
+        end
+    end
+    
+    if sent then
+        print("Mythic Endless Assault Potion sent to all group members.")
+        
+        -- Start timer
+        potionCastEnd = GetTime() + 60  -- 60 Sekunden Laufzeit
+        potionCD = GetTime() + 180      -- 180 Sekunden Cooldown
+        potionCaster = "Group"
+    else
+        print("No group members found!")
     end
 end)
 
+-- Formular-Frame für Charakternamen
+inputFrame = CreateFrame("Frame", nil, frame)
+inputFrame:SetAllPoints(frame)
+
+inputLabel = inputFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+inputLabel:SetPoint("TOP", inputFrame, "TOP", 0, -38)
+inputLabel:SetText("Select Character with the highest Aura Ranks:")
+
+-- Set up inputFrame event handler
+inputFrame:HookScript("OnShow", function()
+    ShowNameButtons()
+    AdjustFrameHeight()
+end)
+
+-- Initial addon load check and setup
+-- Initialize variables after loading saved data
+if MythicHelperMainName then
+    SetBuffTarget(MythicHelperMainName)
+    mainUI:Show()
+    inputFrame:Hide()
+    -- Delayed call to ensure mainNameText is created
+    DelayedCallback(0.1, function()
+        UpdateMainName()
+    end)
+else
+    mainUI:Hide()
+    inputFrame:Show()
+    ShowNameButtons()
+end
+
+-- Initial check when addon loads - only show if in instance
+if CanLoadMythicHelper() then
+    frame:Show()
+    AdjustFrameHeight()
+    print("|cff55ff55MythicHelper: Addon loaded!|r")
+else
+    frame:Hide()  -- Hide frame if not in instance
+end
 
 -- Mapping: Klasse -> Spellname für Flüstern
 local classWhisperSpells = {
@@ -715,6 +996,9 @@ local classWhisperSpells = {
 -- Special Class Whisper Icon-Button (rechts neben Potion)
 local specialWhisperIcon = "Interface\\Icons\\achievement_pvp_o_h" -- Wähle ein beliebiges Icon
 
+-- Calculate dividerY if not available
+local dividerY = dividerY or (-28 - 4*(buttonHeight+buttonSpacing) - 8 - buttonHeight - 8)
+
 local specialWhisperButton = CreateFrame("Button", nil, mainUI)
 specialWhisperButton:SetSize(buttonWidth, buttonHeight)
 specialWhisperButton:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), dividerY - 38)
@@ -724,85 +1008,339 @@ specialWhisperButton.icon:SetSize(28, 28)
 specialWhisperButton.icon:SetPoint("TOP", specialWhisperButton, "TOP", 0, -2)
 specialWhisperButton.icon:SetTexture(specialWhisperIcon)
 
-specialWhisperButton.text = specialWhisperButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+specialWhisperButton.text = specialWhisperButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 specialWhisperButton.text:SetPoint("TOP", specialWhisperButton.icon, "BOTTOM", 0, -1)
 specialWhisperButton.text:SetText("Special")
 specialWhisperButton.text:SetTextColor(1, 0.82, 0)
 
 specialWhisperButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+
+-- Tooltip für Special Button
+specialWhisperButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Special Class Cooldowns", 1, 1, 1)
+    GameTooltip:AddLine("Sends class-specific cooldown spells to all group members:", 0.7, 0.7, 1)
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Paladin: Avenging Wrath", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Shaman: Bloodlust/Heroism", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Warrior: Death Wish/Recklessness", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Mage: Combustion", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Priest: Power Infusion", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Rogue: Adrenaline Rush", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Hunter: Rapid Fire", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Warlock: Metamorphosis", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Druid: Berserk", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Death Knight: Unbreakable Armor/Army", 1, 0.8, 0.6)
+    GameTooltip:Show()
+end)
+specialWhisperButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 specialWhisperButton:SetScript("OnClick", function()
-    local members = {}
-    if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-            local name = GetRaidRosterInfo(i)
-            local unit = "raid"..i
-            local _, class = UnitClass(unit)
-            if name and class then
-                table.insert(members, { name = name, class = class })
+    local sentCount = 0
+    
+    -- Function to send class-specific spells to a player
+    local function SendClassSpells(name, class)
+        local spells = classWhisperSpells[class]
+        if spells and #spells > 0 then
+            for _, spell in ipairs(spells) do
+                SendChatMessage(spell, "WHISPER", nil, name)
+                sentCount = sentCount + 1
             end
         end
-    else
+    end
+    
+    -- Send to raid members
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name, _, _, _, class = GetRaidRosterInfo(i)
+            if name and class then
+                SendClassSpells(name, class)
+            end
+        end
+    -- Send to party members
+    elseif GetNumPartyMembers() > 0 then
         for i = 1, GetNumPartyMembers() do
             local unit = "party"..i
             local name = UnitName(unit)
             local _, class = UnitClass(unit)
             if name and class then
-                table.insert(members, { name = name, class = class })
+                SendClassSpells(name, class)
             end
         end
+        -- Also send to player
         local playerName = UnitName("player")
         local _, playerClass = UnitClass("player")
-        table.insert(members, { name = playerName, class = playerClass })
+        if playerName and playerClass then
+            SendClassSpells(playerName, playerClass)
+        end
+    else
+        print("No group found!")
+        return
     end
+    
+    if sentCount > 0 then
+        print("Sent " .. sentCount .. " class-specific cooldown spells to group members.")
+    else
+        print("No spells sent - check if classWhisperSpells table is defined.")
+    end
+end)
 
-    for _, member in ipairs(members) do
-        local msgs = classWhisperSpells[member.class]
-        if type(msgs) == "table" then
-            for _, msg in ipairs(msgs) do
-                SendChatMessage(msg, "WHISPER", nil, member.name)
-                print("Sent to "..member.name..": "..msg)
+-- SpellBlocker Options Button (unterhalb des Special Buttons)
+local spellBlockerIcon = "Interface\\Icons\\spell_chargenegative" -- Wähle ein passendes Icon
+
+local spellBlockerButton = CreateFrame("Button", nil, mainUI)
+spellBlockerButton:SetSize(buttonWidth, buttonHeight)
+spellBlockerButton:SetPoint("TOPLEFT", specialWhisperButton, "BOTTOMLEFT", 0, -buttonSpacing)
+
+spellBlockerButton.icon = spellBlockerButton:CreateTexture(nil, "ARTWORK")
+spellBlockerButton.icon:SetSize(28, 28)
+spellBlockerButton.icon:SetPoint("TOP", spellBlockerButton, "TOP", 0, -2)
+spellBlockerButton.icon:SetTexture(spellBlockerIcon)
+
+spellBlockerButton.text = spellBlockerButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+spellBlockerButton.text:SetPoint("TOP", spellBlockerButton.icon, "BOTTOM", 0, -1)
+spellBlockerButton.text:SetText("SpellBlock")
+spellBlockerButton.text:SetTextColor(1, 0.82, 0)
+
+spellBlockerButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+
+-- Tooltip für SpellBlocker Button
+spellBlockerButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("SpellBlocker Control", 1, 1, 1)
+    GameTooltip:AddLine("Manages spell blocking for group members:", 0.7, 0.7, 1)
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Left Click: Send current blocks to group", 0, 1, 0)
+    GameTooltip:AddLine("Right Click: Open SpellBlocker options", 0, 1, 0)
+    GameTooltip:AddLine("Shift + Left Click: Reset all blocks", 1, 0.5, 0)
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Configure which spells each class should block", 0.7, 0.7, 1)
+    GameTooltip:AddLine("to prevent accidental casting in Mythic dungeons.", 0.7, 0.7, 1)
+    GameTooltip:Show()
+end)
+spellBlockerButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+spellBlockerButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+spellBlockerButton:SetScript("OnClick", function(self, button)
+    if button == "LeftButton" then
+        if IsShiftKeyDown() then
+            -- Shift+LeftClick: Reset all blocks
+            if ResetAllBlockLists then
+                ResetAllBlockLists()
+                print("All spell blocks have been reset.")
+            else
+                print("SpellBlocker not loaded!")
+            end        else
+            -- LeftClick: Send all current blocks to group
+            if SendBlockCommandsToGroup then
+                SendBlockCommandsToGroup()
+                print("Current spell blocks sent to group.")
+            else
+                print("SpellBlocker not loaded!")
             end
-        elseif type(msgs) == "string" then
-            SendChatMessage(msgs, "WHISPER", nil, member.name)
-            print("Sent to "..member.name..": "..msgs)
+        end
+    elseif button == "RightButton" then
+        -- RightClick: Open SpellBlocker options
+        local optionsFrame = _G["SpellBlockerOptions"]
+        if optionsFrame then
+            if optionsFrame:IsShown() then
+                optionsFrame:Hide()
+            else
+                optionsFrame:Show()
+            end
+        else
+            print("SpellBlocker addon not loaded or options frame not found!")
         end
     end
 end)
 
-specialWhisperButton:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Special Class Whisper\nPower your Cooldowns!", 1, 1, 1)
-    GameTooltip:Show()
-end)
-specialWhisperButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
--- Überprüfen, ob das Addon geladen werden soll
-local function CanLoadMythicHelper()
-    local inInstance, instanceType = IsInInstance()
-    local raidMembers = GetNumRaidMembers()
-    local partyMembers = GetNumPartyMembers()
-    local groupSize = (raidMembers > 0 and raidMembers) or (partyMembers + 1) -- +1 für den Spieler selbst
-
-    return inInstance and (instanceType == "party" or instanceType == "raid") and groupSize > 1
+-- Combined dropdown menu for minimap button
+function CreateCombinedDropdownMenu()
+    local menuFrame = CreateFrame("Frame", "MythicHelperCombinedMenu", UIParent, "UIDropDownMenuTemplate")
+    
+    local menuItems = {
+        {
+            text = "|cff55ff55MythicHelper|r",
+            isTitle = true,
+            notCheckable = true
+        },
+        {
+            text = "Toggle MythicHelper Window",
+            func = function()
+                if not CanLoadMythicHelper() then
+                    print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
+                    frame:Hide()
+                    return
+                end
+                if frame:IsShown() then
+                    frame:Hide()
+                else
+                    frame:Show()
+                    AdjustFrameHeight()
+                end
+                CloseDropDownMenus()
+            end,
+            notCheckable = true
+        },
+        {
+            text = " ",
+            isTitle = true,
+            notCheckable = true
+        },
+        {
+            text = "|cffffa500MythicTrashTracker|r",
+            isTitle = true,
+            notCheckable = true
+        }
+    }
+    
+    -- Add TrashTracker menu items directly
+    if MythicTrashTracker_IsVisible then
+        table.insert(menuItems, {
+            text = "Show/Hide Tracker",
+            func = function()
+                if MythicTrashTracker_ToggleVisibility then
+                    MythicTrashTracker_ToggleVisibility()
+                end
+                CloseDropDownMenus()
+            end,
+            notCheckable = true
+        })
+        
+        -- Add all tracker options directly to the main menu
+        table.insert(menuItems, {
+            text = "Toggle All Buffs",
+            func = function()
+                -- Call the function from MythicTrashTracker if available
+                if _G["OPTIONS"] and _G["RequiredBuffGroups"] and _G["UpdateBuffGroupButtons"] then
+                    local allEnabled = true
+                    for i = 1, #_G["RequiredBuffGroups"] do
+                        if not _G["OPTIONS"].buffGroups[i] then
+                            allEnabled = false
+                            break
+                        end
+                    end
+                    
+                    for i = 1, #_G["RequiredBuffGroups"] do
+                        _G["OPTIONS"].buffGroups[i] = not allEnabled
+                    end
+                    
+                    _G["UpdateBuffGroupButtons"]()
+                    local lang = _G["OPTIONS"].language or "en"
+                    print("|cFFFFA500[MythicTrashTracker]: " .. (lang == "de" and "Alle Buff-Gruppen " or "All Buff Groups ") .. (allEnabled and (lang == "de" and "deaktiviert." or "disabled.") or (lang == "de" and "aktiviert." or "enabled.")))
+                end
+                CloseDropDownMenus()
+            end,
+            notCheckable = true
+        })
+        
+        table.insert(menuItems, {
+            text = "Sound on/off",
+            isNotRadio = true,
+            checked = function() 
+                return _G["OPTIONS"] and _G["OPTIONS"].soundEnabled or false
+            end,
+            func = function()
+                if _G["OPTIONS"] then
+                    _G["OPTIONS"].soundEnabled = not _G["OPTIONS"].soundEnabled
+                    local lang = _G["OPTIONS"].language or "en"
+                    print("|cFFFFA500[MythicTrashTracker]: " .. (lang == "de" and "Sound " or "Sound ") .. (_G["OPTIONS"].soundEnabled and (lang == "de" and "aktiviert." or "enabled.") or (lang == "de" and "deaktiviert." or "disabled.")))
+                end
+                CloseDropDownMenus()
+            end
+        })
+        
+        table.insert(menuItems, {
+            text = "Buff-Tracking on/off",
+            isNotRadio = true,
+            checked = function() 
+                return _G["OPTIONS"] and _G["OPTIONS"].trackBuffs or false
+            end,
+            func = function()
+                if _G["OPTIONS"] then
+                    _G["OPTIONS"].trackBuffs = not _G["OPTIONS"].trackBuffs
+                    if _G["OPTIONS"].trackBuffs then
+                        if _G["EnableBuffChecker"] then _G["EnableBuffChecker"]() end
+                    else
+                        if _G["DisableBuffChecker"] then _G["DisableBuffChecker"]() end
+                    end
+                    if _G["UpdateBuffTrackingUI"] then _G["UpdateBuffTrackingUI"]() end
+                end
+                CloseDropDownMenus()
+            end
+        })
+        
+        table.insert(menuItems, {
+            text = "Advanced Tracker Options...",
+            func = function()
+                if _G["OpenOptionsWindow"] then
+                    _G["OpenOptionsWindow"]()
+                else
+                    print("|cFFFF0000[MythicTrashTracker]: OpenOptionsWindow is not available.")
+                end
+                CloseDropDownMenus()
+            end,
+            notCheckable = true
+        })
+    end
+    
+    table.insert(menuItems, {
+        text = " ",
+        isTitle = true,
+        notCheckable = true
+    })
+    
+    table.insert(menuItems, {
+        text = "Close",
+        func = function()
+            CloseDropDownMenus()
+        end,
+        notCheckable = true
+    })
+    
+    EasyMenu(menuItems, menuFrame, "cursor", 0, 0, "MENU")
 end
 
 -- Ereignis-Handler für Instanzwechsel
 local function OnEvent(self, event, ...)
-    if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+    if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED" then
         if CanLoadMythicHelper() then
             frame:Show()
-            inputFrame:Show()
-            mainUI:Hide()
-            AdjustFrameHeight()
-            print("|cff55ff55MythicHelper: Addon loaded!|r")
+            if inputFrame then
+                inputFrame:Show()
+            end
+            if mainUI then
+                mainUI:Hide()
+            end
+            if AdjustFrameHeight then
+                AdjustFrameHeight()
+            end
+            -- Tank-Perk-Tracking beim Betreten einer neuen Instanz zurücksetzen
+            if ResetTankPerkTracking then
+                ResetTankPerkTracking()
+            end
         else
             frame:Hide()
-            print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
             -- Potion-Timer zurücksetzen, wenn Instanz verlassen wird
             potionCD = 0
             potionCastEnd = 0
             potionCaster = ""
-            potionCDPending = false
+            potionCDPending = false            -- Hunter-Tracking beim Verlassen der Instanz zurücksetzen
+            if ResetHunterAnimalCompanionTracking then
+                ResetHunterAnimalCompanionTracking()
+            end
+            -- Tank-Perk-Tracking beim Verlassen der Instanz zurücksetzen
+            if ResetTankPerkTracking then
+                ResetTankPerkTracking()
+            end
+            -- Priest-Holy-Perk-Tracking beim Verlassen der Instanz zurücksetzen
+            if ResetPriestHolyPerkTracking then
+                ResetPriestHolyPerkTracking()
+            end
+            -- Hide buff warning when leaving instance
+            if MythicHelper_ClearBuffWarning then
+                MythicHelper_ClearBuffWarning()
+            end
         end
     end
 end
@@ -811,77 +1349,38 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+-- Add event for immediate instance exit detection
+eventFrame:RegisterEvent("ZONE_CHANGED")
 eventFrame:SetScript("OnEvent", OnEvent)
-
--- Initialer Check beim Laden des Addons
-if CanLoadMythicHelper() then
-    frame:Show()
-    inputFrame:Show()
-    mainUI:Hide()
-    AdjustFrameHeight()
-    print("|cff55ff55MythicHelper: Addon loaded!|r")
-else
-    frame:Hide()
-    print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
-end
-
-frame:Hide()
-inputFrame:Show()
-mainUI:Hide()
-
--- Passe das Frame an die neue Höhe an
-local function AdjustFrameHeight()
-    if mainUI:IsShown() then
-        local rows = 4
-        local auraRows = math.ceil(#auren / 2)
-        local utilRows = #utilityButtons
-        local headerSpace = 28 + 26
-        local aurasHeaderSpace = 26
-        local dividerSpace = 24
-        local cooldownHeader = 24
-        local cooldownButtons = buttonHeight + 8
-        local bottomButtons = 44
-        local padding = 24
-
-        -- Dynamische Zeilen für Spellblocks
-        local groupSize = 0
-        if GetNumRaidMembers() > 0 then
-            groupSize = GetNumRaidMembers()
-        elseif GetNumPartyMembers() > 0 then
-            groupSize = GetNumPartyMembers() + 1 -- +1 für den Spieler selbst
-        else
-            groupSize = 1
-        end
-        local maxPerCol = 5
-        local spellblockRows = math.min(maxPerCol, groupSize)
-
-        local maxRowsAll = math.max(rows, spellblockRows, utilRows, auraRows)
-        local buttonBlock = maxRowsAll * (buttonHeight + buttonSpacing)
-
-        local totalHeight = headerSpace + aurasHeaderSpace + buttonBlock + dividerSpace + cooldownHeader + cooldownButtons + bottomButtons + padding
-
-        -- Passe die Breite für 4 Spalten an:
-        local totalWidth = 16 + 4*buttonWidth + 3*colSpacing + 16
-        frame:SetWidth(totalWidth)
-        frame:SetHeight(totalHeight)
-    elseif inputFrame:IsShown() then
-        frame:SetHeight(220) -- Feste Höhe für das Auswahlfenster, ggf. anpassen!
-        frame:SetWidth(360)  -- Feste Breite für das Auswahlfenster, ggf. anpassen!
-    else
-        frame:SetHeight(80)
-        frame:SetWidth(260)
-    end
-end
-
-
--- Ganz oben (nach den lokalen Variablen)
-if MythicHelperMainName then
-    buffTarget = MythicHelperMainName
-end
 
 -- Slash Command: /mhelper zum Öffnen/Schließen des Addons
 SLASH_MHELPER1 = "/mhelper"
-SlashCmdList["MHELPER"] = function()
+SLASH_MHELPER2 = "/mh"
+SlashCmdList["MHELPER"] = function(msg)    if msg == "reset" then
+        ResetHunterAnimalCompanionTracking()
+        ResetTankPerkTracking()
+        ResetPriestHolyPerkTracking()
+        return
+    elseif msg == "resethunter" then
+        ResetHunterAnimalCompanionTracking()
+        return
+    elseif msg == "resettank" then
+        ResetTankPerkTracking()
+        return
+    elseif msg == "resetpriest" then
+        ResetPriestHolyPerkTracking()
+        return
+    elseif msg == "tanksend" or msg == "tankperks" then
+        ManualSendTankPerks()
+        return
+    elseif msg == "huntersend" or msg == "animalcompanion" then
+        AutoSendHunterAnimalCompanion()
+        return
+    elseif msg == "priestsend" or msg == "holyform" then
+        ManualSendPriestHolyPerks()
+        return
+    end
+    
     if not CanLoadMythicHelper() then
         print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
         frame:Hide()
@@ -897,58 +1396,115 @@ end
 
 -- Minimap Button
 local minimapButton = CreateFrame("Button", "MythicHelperMinimapButton", Minimap)
-minimapButton:SetSize(24, 24)
+minimapButton:SetSize(32, 32)
 minimapButton:SetFrameStrata("MEDIUM")
-minimapButton:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 0, 0)
-minimapButton:SetNormalTexture("Interface\\AddOns\\MythicHelper\\icon")
+minimapButton:SetPoint("TOPLEFT", Minimap, "TOPLEFT", -15, 15)
+
+-- Create a circular background
+minimapButton.background = minimapButton:CreateTexture(nil, "BACKGROUND")
+minimapButton.background:SetSize(32, 32)
+minimapButton.background:SetPoint("CENTER")
+minimapButton.background:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+
+-- Set an appropriate icon (skull with crossed swords for mythic content)
+minimapButton:SetNormalTexture("Interface\\Icons\\Achievement_PVP_A_A")
 minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
-minimapButton:SetScript("OnClick", function()
-    if not CanLoadMythicHelper() then
-        print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
-        frame:Hide()
-        return
+-- Make the icon fit properly
+local normalTexture = minimapButton:GetNormalTexture()
+if normalTexture then
+    normalTexture:SetSize(20, 20)
+    normalTexture:SetPoint("CENTER")
+end
+
+-- Make it movable around the minimap
+minimapButton:SetMovable(true)
+minimapButton:EnableMouse(true)
+minimapButton:RegisterForDrag("LeftButton")
+
+-- Add drag functionality with minimap clamping
+minimapButton:SetScript("OnDragStart", function(self)
+    if IsShiftKeyDown() then
+        self:StartMoving()
     end
-    if frame:IsShown() then
-        frame:Hide()
-    else
-        frame:Show()
+end)
+
+minimapButton:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    -- Clamp to minimap using the function from MythicTrashTracker
+    if _G["ClampToMinimap"] then
+        _G["ClampToMinimap"](self)
+    end
+end)
+
+-- Enable both left and right click
+minimapButton:RegisterForClicks("AnyUp")
+
+minimapButton:SetScript("OnClick", function(self, button)
+    if button == "LeftButton" and not IsShiftKeyDown() then
+        -- Original MythicHelper functionality
+        if not CanLoadMythicHelper() then
+            print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
+            frame:Hide()
+            return
+        end
+        if frame:IsShown() then
+            frame:Hide()
+        else
+            frame:Show()
+            AdjustFrameHeight()
+        end
+    elseif button == "RightButton" then
+        -- Show combined dropdown menu
+        CreateCombinedDropdownMenu()
     end
 end)
 
 minimapButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("MythicHelper\nClick to Open/Close", 1, 1, 1)
+    GameTooltip:SetText("MythicHelper", 1, 1, 1)
+    GameTooltip:AddLine("Left Click: Open/Close MythicHelper", 0.8, 0.8, 0.8)
+    GameTooltip:AddLine("Right Click: Show Menu", 0.8, 0.8, 0.8)
+    GameTooltip:AddLine("Shift + Drag: Move Button", 0.6, 0.6, 0.6)
     GameTooltip:Show()
 end)
 minimapButton:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
-if not minimapButton:GetNormalTexture() then
-    minimapButton:SetNormalTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-end
-
 -- Nach dem Heroism-Bereich, z.B. nach heroismUserText:
-local heroismResetButton = CreateFrame("Button", nil, mainUI, "GameMenuButtonTemplate")
+local heroismResetButton = CreateFrame("Button", nil, mainUI)
 heroismResetButton:SetSize(60, 18)
-heroismResetButton:SetPoint("TOP", heroismUserText, "BOTTOM", 0, -4)
-heroismResetButton:SetText("Reset Heroism")
+heroismResetButton:SetPoint("BOTTOM", mainUI, "BOTTOM", -120, 8) -- weiter nach links
+
+-- Add text to reset button
+heroismResetButton.text = heroismResetButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+heroismResetButton.text:SetPoint("CENTER", heroismResetButton, "CENTER", 0, 0)
+heroismResetButton.text:SetText("Reset Heroism")
+heroismResetButton.text:SetTextColor(1, 0.82, 0)
+heroismResetButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+
+-- Tooltip für Reset Heroism Button
+heroismResetButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Reset Heroism Timer", 1, 1, 1)
+    GameTooltip:AddLine("Clears the current Heroism cooldown", 0.7, 0.7, 1)
+    GameTooltip:AddLine("Use if timer is stuck or incorrect", 1, 0.8, 0.6)
+    GameTooltip:Show()
+end)
+heroismResetButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 heroismResetButton:SetScript("OnClick", function()
     heroismCastEnd = 0
-    heroismCaster = ""
-    heroismButton:Enable()
+    heroismCaster = ""    heroismButton:Enable()
     heroismUserText:SetText("")
     heroismCastBar:Hide()
     heroismCDBar:Hide()
-    print("Heroism timer has been reset.")
 end)
 
-local function OnChatMsgSystem(self, event, msg)
-    if msg and msg:find("Unknown spell Mythic Heroism") then
+local function OnChatMsgSystem(self, event, msg)    if msg and msg:find("Unknown spell Mythic Heroism") then
         heroismQueueIndex = heroismQueueIndex + 1
         if heroismQueueIndex > #heroismQueue then heroismQueueIndex = 1 end
-        print("Mythic Heroism: Player skipped (spell not known).")
         heroismCastEnd = 0
         heroismCaster = ""
         heroismButton:Enable()
@@ -963,184 +1519,568 @@ chatEventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 chatEventFrame:SetScript("OnEvent", OnChatMsgSystem)
 
 
--- Zeige die Buttons immer, wenn das Eingabefeld angezeigt wird:
-inputFrame:HookScript("OnShow", function()
-    ShowNameButtons()
-    AdjustFrameHeight()
-end)
-
 -- Tabelle für die Buttons, damit wir sie später entfernen können
-mhnameButtons = mhnameButtons or {}
+-- mhnameButtons bereits oben definiert
 
 -- Funktion zum Entfernen aller alten Buttons
-local function RemoveOldButtons()
-    for _, btn in ipairs(mhnameButtons) do
-        btn:Hide()
-        btn:SetParent(nil)
+
+-- Event-Handler für Gruppenänderungen
+local f = CreateFrame("Frame")
+f:RegisterEvent("RAID_ROSTER_UPDATE")
+f:RegisterEvent("PARTY_MEMBERS_CHANGED")
+
+-- Tracking für bereits gesendete Hunter-Animal Companions
+local hunterAnimalCompanionSent = {}
+
+-- Tracking für bereits gesendete Tank-Perk: Shield of Destiny
+local tankPerkSent = {}
+
+-- Tracking für bereits gesendete Priest Holy Form Perks
+local priestHolyPerkSent = {}
+
+-- Tracking für Gruppenmitglieder (um Joins vs. Leaves zu erkennen)
+local currentGroupMembers = {}
+
+-- Funktion zur Erkennung von Tank-Specs/Rollen (verwendet die gleiche Logik wie Flask-Verteilung)
+local function IsTankClass(unit)
+    if not UnitExists(unit) then 
+        return false
     end
-    wipe(mhnameButtons)
+    
+    local _, class = UnitClass(unit)
+    
+    -- Tank-fähige Klassen: Paladine, Krieger, Todesritter und Druiden
+    if class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID" then
+        -- Verwende die gleiche Spec-Erkennung wie bei Flask-Verteilung
+        local spec = GetSpecForHybrid(unit)
+        
+        -- Debug: Ausgabe für bessere Diagnostik
+        if unit == "player" then
+            print("DEBUG: My class=" .. class .. ", spec=" .. (spec or "nil"))
+        end
+        
+        -- Spezifische Tank-Spezialisierungen
+        if spec == "Protection" then -- Paladin Protection, Warrior Protection
+            return true
+        elseif class == "DEATHKNIGHT" and spec == "Blood" then
+            return true
+        elseif class == "DRUID" and spec == "Feral" then
+            return true
+        end
+        
+        -- Fallback: Wenn Spec nicht bestimmbar ist oder für andere Charaktere
+        if not spec or spec == "" then
+            -- Zusätzliche Prüfung: Ist der Spieler in einer Tank-Rolle?
+            local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)
+            if role == "TANK" then
+                return true
+            end
+            
+            -- Fallback für kleinere Gruppen: Tank-fähige Klassen bekommen Tank Perks
+            local groupSize = 0
+            if GetNumRaidMembers() > 0 then
+                groupSize = GetNumRaidMembers()
+            elseif GetNumPartyMembers() > 0 then
+                groupSize = GetNumPartyMembers() + 1
+            else
+                groupSize = 1
+            end
+            
+            -- In kleineren Gruppen (≤5) sind Tank-fähige Klassen wahrscheinlich Tanks
+            if groupSize <= 5 then
+                print("DEBUG: Small group (" .. groupSize .. "), assuming " .. class .. " is tank")
+                return true
+            end
+            
+            -- In größeren Gruppen: konservativere Annahme
+            -- Paladine und Krieger haben höhere Wahrscheinlichkeit, Tanks zu sein
+            if class == "PALADIN" or class == "WARRIOR" then
+                print("DEBUG: Large group, but " .. class .. " likely tank")
+                return true
+            end
+        end
+    end
+    
+    return false
 end
 
--- Funktion zum Aktualisieren der Buttons
-function UpdateMythicHelperButtons()
-    RemoveOldButtons()
-
-    local btnWidth, btnHeight = 120, 22
-    local btnSpacingX, btnSpacingY = 16, 6
-    local maxRows = 5
-
-    -- Erstelle eine Tabelle mit 10 Feldern
-    local names = {}
-    for i = 1, 10 do names[i] = "" end
-
-    local count = 1
+-- Funktion zum Aktualisieren der Gruppenmitglieder-Liste
+local function UpdateGroupMembersList()
+    local newMembers = {}
+    local joinedMembers = {}
+    
+    -- Sammle aktuelle Gruppenmitglieder
     if GetNumRaidMembers() > 0 then
         for i = 1, GetNumRaidMembers() do
             local name = GetRaidRosterInfo(i)
             if name and name ~= "" then
-                names[count] = name
-                count = count + 1
+                newMembers[name] = true
+                -- Prüfe ob das ein neues Mitglied ist
+                if not currentGroupMembers[name] then
+                    table.insert(joinedMembers, {name = name, unit = "raid"..i})
+                end
             end
         end
     elseif GetNumPartyMembers() > 0 then
         for i = 1, GetNumPartyMembers() do
             local name = UnitName("party"..i)
             if name and name ~= "" then
-                names[count] = name
-                count = count + 1
+                newMembers[name] = true
+                -- Prüfe ob das ein neues Mitglied ist
+                if not currentGroupMembers[name] then
+                    table.insert(joinedMembers, {name = name, unit = "party"..i})
+                end
             end
         end
-        names[count] = UnitName("player")
-    elseif UnitName("player") then
-        names[count] = UnitName("player")
-    end
-
-    for i = 1, 10 do
-        local name = names[i]
-        local btn = CreateFrame("Button", nil, inputFrame, "GameMenuButtonTemplate")
-        btn:SetSize(btnWidth, btnHeight)
-        local col = math.floor((i-1) / maxRows)
-        local row = (i-1) % maxRows
-        btn:SetPoint(
-            "TOPLEFT",
-            inputLabel,
-            "BOTTOMLEFT",
-            col * (btnWidth + btnSpacingX),
-            -8 - row * (btnHeight + btnSpacingY)
-        )
-        if name ~= "" then
-            btn:SetText(name)
-            btn:SetScript("OnClick", function()
-                buffTarget = name
-                MythicHelperMainName = name
-                frame:SetWidth(260)
-                frame:SetHeight(80)
-                mainUI:Show()
-                AdjustFrameHeight()
-                UpdateMainName()
-                inputFrame:Hide()
-            end)
-            btn:Enable()
-        else
-            btn:SetText("-")
-            btn:SetScript("OnClick", nil)
-            btn:Disable()
+        -- Spieler selbst hinzufügen
+        if count <= 10 then
+            local playerName = UnitName("player")
+            if playerName then
+                newMembers[playerName] = true
+                if not currentGroupMembers[playerName] then
+                    table.insert(joinedMembers, {name = playerName, unit = "player"})
+                end
+            end
         end
-        btn:Show()
-        table.insert(mhnameButtons, btn)
+    else
+        -- Solo - nur Spieler selbst
+        local playerName = UnitName("player")
+        if playerName then
+            newMembers[playerName] = true
+            if not currentGroupMembers[playerName] then
+                table.insert(joinedMembers, {name = playerName, unit = "player"})
+            end
+        end
+    end
+      -- Aktualisiere die Liste
+    currentGroupMembers = newMembers
+      -- Sende Tank-Perks, Hunter Animal Companion und Priest Holy Form nur an neue Mitglieder (mit 5 Sekunden Verzögerung)
+    local newHunters = 0
+    local newPriests = 0
+    for _, member in ipairs(joinedMembers) do
+        if IsTankClass(member.unit) then
+            -- Tank Perk mit 5 Sekunden Verzögerung senden
+            DelayedCallback(5, function()
+                AutoSendTankPerkToPlayer(member.name)
+            end)
+        end
+        
+        -- Prüfe ob es sich um einen neuen Hunter handelt
+        local _, class = UnitClass(member.unit)
+        if class == "HUNTER" then
+            -- Hunter Animal Companion mit 5 Sekunden Verzögerung senden
+            DelayedCallback(5, function()
+                AutoSendHunterAnimalCompanionToPlayer(member.name)
+            end)
+            newHunters = newHunters + 1
+        elseif class == "PRIEST" then
+            -- Priest Holy Form mit 5 Sekunden Verzögerung senden
+            DelayedCallback(5, function()
+                AutoSendPriestHolyToPlayer(member.name)
+            end)
+            newPriests = newPriests + 1
+        end
+    end
+    
+    -- Feedback für neue Hunter und Priester
+    if newHunters > 0 and newPriests > 0 then
+        MythicHelper_SetBuffWarning("Will auto-send Animal Companion to " .. newHunters .. " Hunter(s) and Holy Form to " .. newPriests .. " Priest(s) in 5 seconds")
+        DelayedCallback(8, function()
+            MythicHelper_ClearBuffWarning()
+        end)
+    elseif newHunters > 0 then
+        MythicHelper_SetBuffWarning("Will auto-send Animal Companion to " .. newHunters .. " Hunter(s) in 5 seconds")
+        DelayedCallback(8, function()
+            MythicHelper_ClearBuffWarning()
+        end)
+    elseif newPriests > 0 then
+        MythicHelper_SetBuffWarning("Will auto-send Holy Form to " .. newPriests .. " Priest(s) in 5 seconds")
+        DelayedCallback(8, function()
+            MythicHelper_ClearBuffWarning()
+        end)
     end
 end
 
--- Event-Handler für Gruppenänderungen
-local f = CreateFrame("Frame")
-f:RegisterEvent("RAID_ROSTER_UPDATE")
-f:RegisterEvent("PARTY_MEMBERS_CHANGED")
 f:SetScript("OnEvent", function(self, event, ...)
-    if mainUI:IsShown() then
-        UpdateMythicHelperButtons()
+    if inputFrame:IsShown() then
+        ShowNameButtons()
     end
+    
+    -- Aktualisiere Gruppenmitglieder und sende Tank-Perks an neue Tanks
+    UpdateGroupMembersList()
 end)
 
--- Beispielwerte, ggf. anpassen:
-local HEROISM_DURATION = 40   -- Laufzeit in Sekunden
-local HEROISM_COOLDOWN = 600  -- Cooldown in Sekunden
-
-local function StartHeroismBars()
-    -- Heroism Laufzeit-Balken (CastBar)
-    heroismCastBar:SetMinMaxValues(0, HEROISM_DURATION)
-    heroismCastBar:SetValue(HEROISM_DURATION) -- Start: ganz voll
-    heroismCastBar:Show()
-    heroismCastBar.startTime = GetTime()
-    heroismCastBar:SetScript("OnUpdate", function(self)
-    local elapsed = GetTime() - self.startTime
-    local remaining = HEROISM_DURATION - elapsed
-    if remaining > 0 then
-        self:SetValue(remaining)
-    else
-        self:SetValue(0)
-        self:Hide()
-        self:SetScript("OnUpdate", nil)
+-- Funktion zum automatischen Senden von Animal Companion an einen spezifischen Hunter
+function AutoSendHunterAnimalCompanionToPlayer(name)
+    -- Sende nur wenn noch nicht gesendet
+    if not hunterAnimalCompanionSent[name] then
+        SendChatMessage("cast 81594", "WHISPER", nil, name)
+        hunterAnimalCompanionSent[name] = true
     end
-end)
-
-    -- Heroism Cooldown-Balken (CDBar)
-    heroismCDBar:SetMinMaxValues(0, HEROISM_COOLDOWN)
-    heroismCDBar:SetValue(HEROISM_COOLDOWN) -- Start: voll gefüllt
-    heroismCDBar:Show()
-    heroismCDBar.startTime = GetTime()
-    heroismCDBar:SetScript("OnUpdate", function(self)
-    local elapsed = GetTime() - self.startTime
-    local remaining = HEROISM_COOLDOWN - elapsed
-    if remaining > 0 then
-        self:SetValue(remaining)
-    else
-        self:SetValue(0)
-        self:Hide()
-        self:SetScript("OnUpdate", nil)
-        heroismButton:Enable()
-    end
-end)
 end
--- Im Heroism-Button-OnClick-Handler:
-heroismButton:SetScript("OnClick", function()
-    if #heroismQueue == 0 then FillHeroismQueue() end
-    local nextUser = heroismQueue[heroismQueueIndex]
-    if nextUser then
-        SendChatMessage("cast "..heroismSpell, "WHISPER", nil, nextUser)
-        print("Heroism sent to "..nextUser..".")
-        -- Heroism läuft jetzt NEU (immer überschreiben)
-        heroismCastEnd = GetTime() + HEROISM_DURATION -- 30 Sekunden Laufzeit (anpassen falls nötig)
-        heroismCaster = nextUser
-        heroismUserText:SetText("Heroism: "..nextUser)
-        heroismButton:Disable()
-        StartHeroismBars()
-        -- Balken sofort neu anzeigen
-        heroismCastBar:SetMinMaxValues(0, HEROISM_DURATION)
-        heroismCastBar:SetValue(HEROISM_DURATION)
-        heroismCastBar:Show()
-        heroismCDBar:SetMinMaxValues(0, 600)
-        heroismCDBar:SetValue(0)
-        heroismCDBar:Show()
-        -- Zum nächsten Spieler in der Queue wechseln
-        heroismQueueIndex = heroismQueueIndex + 1
-        if heroismQueueIndex > #heroismQueue then heroismQueueIndex = 1 end
-    end
-end)
 
--- Nach der Definition von mainNameText:
-local changeMainButton = CreateFrame("Button", nil, mainUI, "GameMenuButtonTemplate")
+-- Funktion zum manuellen Senden von Animal Companion an alle Hunter (für manuellen Aufruf)
+function ManualSendHunterAnimalCompanion()
+    local hunterCount = 0
+    local newHunters = 0
+    local alreadySentHunters = 0
+    
+    -- Debug: Gruppenstatus prüfen
+    local raidMembers = GetNumRaidMembers()
+    local partyMembers = GetNumPartyMembers()
+    print("DEBUG: Raid=" .. raidMembers .. ", Party=" .. partyMembers)
+    
+    -- Funktion zum Senden an einen Hunter (nur wenn noch nicht gesendet)
+    local function SendToHunter(name)
+        print("DEBUG: Checking hunter " .. name)
+        if not hunterAnimalCompanionSent[name] then
+            SendChatMessage("cast 81594", "WHISPER", nil, name)
+            hunterAnimalCompanionSent[name] = true
+            hunterCount = hunterCount + 1
+            newHunters = newHunters + 1
+            print("DEBUG: Sent Animal Companion to " .. name)
+        else
+            hunterCount = hunterCount + 1 -- Zähle trotzdem für Gesamtanzahl
+            alreadySentHunters = alreadySentHunters + 1
+            print("DEBUG: " .. name .. " already has Animal Companion")
+        end
+    end
+    
+    -- Überprüfe Raid-Mitglieder
+    if raidMembers > 0 then
+        print("DEBUG: Checking raid members")
+        for i = 1, raidMembers do
+            local name, _, _, _, class = GetRaidRosterInfo(i)
+            if name and class == "HUNTER" then
+                SendToHunter(name)
+            end
+        end
+    -- Überprüfe Party-Mitglieder
+    elseif partyMembers > 0 then
+        print("DEBUG: Checking party members")
+        for i = 1, partyMembers do
+            local unit = "party"..i
+            local name = UnitName(unit)
+            local _, class = UnitClass(unit)
+            if name and class == "HUNTER" then
+                SendToHunter(name)
+            end
+        end
+        -- Überprüfe den Spieler selbst
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        print("DEBUG: Checking player - " .. (playerName or "nil") .. " class=" .. (playerClass or "nil"))
+        if playerName and playerClass == "HUNTER" then
+            SendToHunter(playerName)
+        end
+    else
+        -- Solo - nur den Spieler selbst prüfen
+        print("DEBUG: Solo mode - checking player")
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        print("DEBUG: Player - " .. (playerName or "nil") .. " class=" .. (playerClass or "nil"))
+        if playerName and playerClass == "HUNTER" then
+            SendToHunter(playerName)
+        end
+    end
+    
+    -- Feedback
+    if hunterCount > 0 then
+        if newHunters > 0 then
+            -- UI feedback
+            MythicHelper_SetBuffWarning("Manually sent Animal Companion to " .. newHunters .. " Hunter(s)")
+            -- Clear UI feedback after 5 seconds
+            DelayedCallback(5, function()
+                MythicHelper_ClearBuffWarning()
+            end)
+        else
+            -- Alle Hunter haben bereits Animal Companion
+            MythicHelper_SetBuffWarning("Animal Companion already active for all " .. hunterCount .. " Hunter(s)")
+            DelayedCallback(3, function()
+                MythicHelper_ClearBuffWarning()
+            end)
+        end
+    else
+        -- Keine Hunter gefunden
+        MythicHelper_SetBuffWarning("No hunters found in group")
+        DelayedCallback(3, function()
+            MythicHelper_ClearBuffWarning()
+        end)
+    end
+end
+
+-- Funktion für automatisches Senden (behält den alten Namen für Kompatibilität)
+function AutoSendHunterAnimalCompanion()
+    ManualSendHunterAnimalCompanion()
+end
+
+-- Funktion zum automatischen Senden von Tank-Perk an einen spezifischen Tank
+function AutoSendTankPerkToPlayer(name)
+    -- Sende nur wenn noch nicht gesendet
+    if not tankPerkSent[name] then
+        SendChatMessage("cast 81535", "WHISPER", nil, name)
+        tankPerkSent[name] = true
+        
+        -- UI feedback
+        MythicHelper_SetBuffWarning("Auto-sent Tank Perk to " .. name)
+        -- Clear UI feedback after 5 seconds
+        DelayedCallback(5, function()
+            MythicHelper_ClearBuffWarning()
+        end)
+        
+        print("Tank Perk (Shield of Destiny - 81535) sent to " .. name)
+    end
+end
+
+-- Funktion zum manuellen Senden von Tank-Perks an alle Tanks
+function ManualSendTankPerks()
+    local tankCount = 0
+    local newTanks = 0
+      -- Funktion zum Senden an einen Tank (nur wenn noch nicht gesendet)
+    local function SendToTank(name, unit)
+        if IsTankClass(unit) then
+            if not tankPerkSent[name] then
+                SendChatMessage("cast 81535", "WHISPER", nil, name)
+                tankPerkSent[name] = true
+                tankCount = tankCount + 1
+                newTanks = newTanks + 1
+            else
+                tankCount = tankCount + 1 -- Zähle trotzdem für Gesamtanzahl
+            end
+        end
+    end
+    
+    -- Überprüfe Raid-Mitglieder
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name then
+                SendToTank(name, "raid"..i)
+            end
+        end
+    -- Überprüfe Party-Mitglieder
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local unit = "party"..i
+            local name = UnitName(unit)
+            if name then
+                SendToTank(name, unit)
+            end
+        end
+        -- Überprüfe den Spieler selbst
+        local playerName = UnitName("player")
+        if playerName then
+            SendToTank(playerName, "player")
+        end
+    end
+    
+    -- Feedback
+    if tankCount > 0 then
+        if newTanks > 0 then
+            -- UI feedback
+            MythicHelper_SetBuffWarning("Manually sent Tank Perks to " .. newTanks .. " new Tank(s)")
+            -- Clear UI feedback after 5 seconds
+            DelayedCallback(5, function()
+                MythicHelper_ClearBuffWarning()
+            end)
+        else
+            -- Alle Tanks haben bereits Perks
+            MythicHelper_SetBuffWarning("All " .. tankCount .. " Tank(s) already have perks")
+            DelayedCallback(3, function()
+                MythicHelper_ClearBuffWarning()
+            end)
+        end
+    else
+        -- Keine Tanks gefunden
+        MythicHelper_SetBuffWarning("No tanks found in group")
+        DelayedCallback(3, function()
+            MythicHelper_ClearBuffWarning()
+        end)
+    end
+end
+
+-- Funktion zum automatischen Senden von Priest Holy Form an einen spezifischen Priester
+function AutoSendPriestHolyToPlayer(name)
+    -- Sende nur wenn noch nicht gesendet (für automatische Verteilung)
+    if not priestHolyPerkSent[name] then
+        SendChatMessage("cast 81099", "WHISPER", nil, name)
+        priestHolyPerkSent[name] = true
+        
+        -- UI feedback
+        MythicHelper_SetBuffWarning("Auto-sent Holy Form to " .. name)
+        -- Clear UI feedback after 5 seconds
+        DelayedCallback(5, function()
+            MythicHelper_ClearBuffWarning()
+        end)
+        
+        print("Priest Holy Form (81099) sent to " .. name)
+    end
+end
+
+-- Change Main Button (unten in der Mitte)
+local changeMainButton = CreateFrame("Button", nil, mainUI)
 changeMainButton:SetSize(90, 18)
-changeMainButton:SetPoint("BOTTOM", mainUI, "BOTTOM", 0, 8) -- etwas über dem Main-Namen
-changeMainButton:SetText("Change Main")
+changeMainButton:SetPoint("BOTTOM", mainUI, "BOTTOM", 0, 8) -- zentriert
+
+-- Add text to change main button
+changeMainButton.text = changeMainButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+changeMainButton.text:SetPoint("CENTER", changeMainButton, "CENTER", 0, 0)
+changeMainButton.text:SetText("Change Main")
+changeMainButton.text:SetTextColor(1, 0.82, 0)
+changeMainButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+
+-- Tooltip für Change Main Button
+changeMainButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Change Main Character", 1, 1, 1)
+    GameTooltip:AddLine("Opens character selection window", 0.7, 0.7, 1)
+    GameTooltip:AddLine("Choose who should receive aura buffs", 1, 0.8, 0.6)
+    GameTooltip:Show()
+end)
+changeMainButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 changeMainButton:SetScript("OnClick", function()
     mainUI:Hide()
     inputFrame:Show()
     AdjustFrameHeight()
 end)
 
+-- Show/Hide Tracker Button (rechts neben Change Main)
+local showTrackerButton = CreateFrame("Button", nil, mainUI)
+showTrackerButton:SetSize(80, 18)
+showTrackerButton:SetPoint("BOTTOM", mainUI, "BOTTOM", 90, 8) -- weiter rechts
 
+-- Add text to tracker button
+showTrackerButton.text = showTrackerButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+showTrackerButton.text:SetPoint("CENTER", showTrackerButton, "CENTER", 0, 0)
+showTrackerButton.text:SetText("Show Tracker")
+showTrackerButton.text:SetTextColor(1, 0.82, 0)
+showTrackerButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
 
+-- Tooltip für Show Tracker Button
+showTrackerButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Mythic Trash Tracker", 1, 1, 1)
+    GameTooltip:AddLine("Toggle visibility of the trash percentage tracker", 0.7, 0.7, 1)
+    GameTooltip:AddLine("Shows progress bars for enemy forces in Mythic dungeons", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Helps track completion percentage for Mythic+ requirements", 0.7, 0.7, 1)
+    GameTooltip:Show()
+end)
+showTrackerButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+local trackerVisible = false
 
+showTrackerButton:SetScript("OnClick", function()
+    -- Use the global functions from MythicTrashTracker if available
+    if MythicTrashTracker_ToggleVisibility then
+        MythicTrashTracker_ToggleVisibility()
+        -- Update button text based on current visibility
+        if MythicTrashTracker_IsVisible and MythicTrashTracker_IsVisible() then
+            showTrackerButton.text:SetText("Hide Tracker")
+        else
+            showTrackerButton.text:SetText("Show Tracker")
+        end
+    else
+        -- Fallback: Try to find the progress bar container directly
+        local frame = _G["MythicTrashTrackerProgressBarContainer"]
+        if frame then
+            if frame:IsShown() then
+                frame:Hide()
+                showTrackerButton.text:SetText("Show Tracker")
+            else
+                frame:Show()
+                showTrackerButton.text:SetText("Hide Tracker")
+            end
+        else
+            print("MythicTrashTracker not found!")
+        end
+    end
+end)
 
+-- Global functions for buff warning system
+function MythicHelper_SetBuffWarning(text)
+    if buffWarningFrame and buffWarningFrame.text then
+        buffWarningFrame.text:SetText(text)
+        buffWarningFrame:Show()
+    end
+end
 
+function MythicHelper_ClearBuffWarning()
+    if buffWarningFrame then
+        buffWarningFrame:Hide()
+        if buffWarningFrame.text then
+            buffWarningFrame.text:SetText("")
+        end
+    end
+end
+
+-- Funktion zum manuellen Senden von Priest Holy Form Perks an alle Priester
+function ManualSendPriestHolyPerks()
+    local priestCount = 0
+    local newPriests = 0
+    local alreadySentPriests = 0
+    
+    -- Funktion zum Senden an einen Priester (nur wenn noch nicht gesendet)
+    local function SendToPriest(name, unit)
+        local _, class = UnitClass(unit)
+        if class == "PRIEST" then
+            if not priestHolyPerkSent[name] then
+                SendChatMessage("cast 81099", "WHISPER", nil, name)
+                priestHolyPerkSent[name] = true
+                priestCount = priestCount + 1
+                newPriests = newPriests + 1
+            else
+                priestCount = priestCount + 1
+                alreadySentPriests = alreadySentPriests + 1
+            end
+        end
+    end
+    
+    -- Überprüfe Raid-Mitglieder
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name then
+                SendToPriest(name, "raid"..i)
+            end
+        end
+    -- Überprüfe Party-Mitglieder
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local unit = "party"..i
+            local name = UnitName(unit)
+            if name then
+                SendToPriest(name, unit)
+            end
+        end
+        -- Überprüfe den Spieler selbst
+        local playerName = UnitName("player")
+        if playerName then
+            SendToPriest(playerName, "player")
+        end
+    end
+    
+    -- Feedback
+    if priestCount > 0 then
+        if newPriests > 0 then
+            -- UI feedback
+            MythicHelper_SetBuffWarning("Sent Holy Form to " .. newPriests .. " Priest(s)")
+            -- Clear UI feedback after 5 seconds
+            DelayedCallback(5, function()
+                MythicHelper_ClearBuffWarning()
+            end)
+        else
+            -- Alle Priester haben bereits Holy Form
+            MythicHelper_SetBuffWarning("Holy Form already active for all " .. priestCount .. " Priest(s)")
+            DelayedCallback(3, function()
+                MythicHelper_ClearBuffWarning()
+            end)
+        end
+    else
+        -- Keine Priester gefunden
+        MythicHelper_SetBuffWarning("No priests found in group")
+        DelayedCallback(3, function()
+            MythicHelper_ClearBuffWarning()
+        end)
+    end
+end

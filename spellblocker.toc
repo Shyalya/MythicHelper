@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: SpellBlocker
+## Notes: Blockiert gezielt Spells für Partybots
+## Author: Shyalya
+## Version: 0.1 Beta
+## SavedVariables: SpellBlockerDB, SpellBlockerBlockAllPos, SpellBlockerLastActiveTab, SpellBlockerMinimapPos
+
+
+spellblocker.lua

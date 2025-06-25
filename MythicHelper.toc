@@ -6,3 +6,7 @@
 ## SavedVariables: MythicHelperMainName
 
 MythicHelper.lua
+spellblocker.lua
+InstanceDungeonsData.lua
+InstanceRaidsData.lua
+MythicTrashTracker.lua
