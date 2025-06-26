@@ -617,10 +617,6 @@ potionCastBar:SetStatusBarColor(0, 1, 0) -- Grün für Laufzeit
 potionCastBar:SetMinMaxValues(0, 60)
 potionCastBar:Hide()
 
-local potionCasterText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-potionCasterText:SetPoint("LEFT", potionCDBar, "LEFT", 2, 0)
-potionCasterText:SetText("")
-
 -- Überschrift für die dritte Spalte (Bot Utilities) auf gleiche Höhe wie Auren
 local botUtilsHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 botUtilsHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), -54)
@@ -651,7 +647,6 @@ for i, btnData in ipairs(utilityButtons) do
     btn.text:SetTextColor(1, 0.82, 0)
 
     btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-      -- Tooltips für Utility Buttons
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if btnData.message == "SPECIAL_FLASK" then
@@ -672,6 +667,7 @@ for i, btnData in ipairs(utilityButtons) do
             GameTooltip:AddLine("Sends Shield of Destiny (81535) to all tanks", 0.7, 0.7, 1)
             GameTooltip:AddLine("Works for: Blood DK, Prot Warrior, Prot Paladin, Feral Druid", 0.8, 0.8, 1)
             GameTooltip:AddLine("Only sends to tanks who haven't received it yet", 1, 0.8, 0.6)
+            GameTooltip:AddLine("|cff00ff00Rechtsklick: Tank manuell auswählen|r", 0.6, 1, 0.6)
         elseif btnData.message == "MANUAL_PRIEST_HOLY" then
             GameTooltip:SetText("Priest Holy Form", 1, 1, 1)
             GameTooltip:AddLine("Sends Holy Form (81099) to all priests", 0.7, 0.7, 1)
@@ -696,7 +692,7 @@ for i, btnData in ipairs(utilityButtons) do
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-      btn:SetScript("OnClick", function()
+    btn:SetScript("OnClick", function(self, button)
         if btnData.message == "SPECIAL_FLASK" then
             -- Spezieller Fall: An jeden Spieler individuellen Flask senden
             if GetNumRaidMembers() > 0 then
@@ -721,14 +717,51 @@ for i, btnData in ipairs(utilityButtons) do
                 local flask = GetFlaskForClass("player")
                 SendChatMessage("u " .. flask, "WHISPER", nil, UnitName("player"))
             end
-        elseif btnData.message == "MANUAL_HUNTER_AC" then
-            -- Hunter Animal Companion manuell senden
-            ManualSendHunterAnimalCompanion()
         elseif btnData.message == "MANUAL_TANK_PERK" then
-            -- Tank Perks manuell senden
-            ManualSendTankPerks()
+            if button == "RightButton" then
+                -- Dropdown für Tank-Auswahl anzeigen (jetzt mit persistentem Frame und 'cursor')
+                local menu = {}
+                local groupSize = GetNumRaidMembers() > 0 and GetNumRaidMembers() or GetNumPartyMembers()
+                local prefix = GetNumRaidMembers() > 0 and "raid" or "party"
+                if groupSize == 0 then
+                    table.insert(menu, { text = UnitName("player"), func = function()
+                        SendChatMessage("cast 81535", "WHISPER", nil, UnitName("player"))
+                        MythicHelper_SetBuffWarning("Tank Perk an "..UnitName("player").." gesendet")
+                        DelayedCallback(3, MythicHelper_ClearBuffWarning)
+                    end, notCheckable = true })
+                else
+                    for i = 1, groupSize do
+                        local unit = prefix..i
+                        local name = UnitName(unit)
+                        if name and UnitExists(unit) then
+                            table.insert(menu, { text = name, func = function()
+                                SendChatMessage("cast 81535", "WHISPER", nil, name)
+                                MythicHelper_SetBuffWarning("Tank Perk an "..name.." gesendet")
+                                DelayedCallback(3, MythicHelper_ClearBuffWarning)
+                            end, notCheckable = true })
+                        end
+                    end
+                end
+                table.insert(menu, { text = "Schließen", func = function() CloseDropDownMenus() end, notCheckable = true })
+                if not MythicHelperTankMenuFrame then
+                    MythicHelperTankMenuFrame = CreateFrame("Frame", "MythicHelperTankMenuFrame", UIParent, "UIDropDownMenuTemplate")
+                end
+                EasyMenu(menu, MythicHelperTankMenuFrame, "cursor", 0, 0, "MENU")
+            else
+                local selected = GetSelectedTank()
+                if selected then
+                    -- SpellID 81535: Shield of Destiny
+                    SendChatMessage("cast 81535", "WHISPER", nil, selected)
+                    tankPerkSent[selected] = true
+                    MythicHelper_SetBuffWarning("Tank Perk an "..selected.." gesendet")
+                    DelayedCallback(3, MythicHelper_ClearBuffWarning)
+                else
+                    ManualSendTankPerks()
+                end
+            end
+        elseif btnData.message == "MANUAL_HUNTER_AC" then
+            ManualSendHunterAnimalCompanion()
         elseif btnData.message == "MANUAL_PRIEST_HOLY" then
-            -- Priest Holy Form manuell senden
             ManualSendPriestHolyPerks()
         else
             -- Standard-Button-Verhalten für andere Buttons
@@ -745,9 +778,70 @@ for i, btnData in ipairs(utilityButtons) do
     end)
 end
 
--- Nach dem Erstellen aller Buttons und Balken:
-mainUI:SetScript("OnShow", function()
+-- Change Main Button (unten in der Mitte)
+local changeMainButton = CreateFrame("Button", nil, mainUI)
+changeMainButton:SetSize(90, 18)
+changeMainButton:SetPoint("BOTTOM", mainUI, "BOTTOM", 0, 8) -- zentriert
+changeMainButton.text = changeMainButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+changeMainButton.text:SetPoint("CENTER", changeMainButton, "CENTER", 0, 0)
+changeMainButton.text:SetText("Change Main")
+changeMainButton.text:SetTextColor(1, 0.82, 0)
+changeMainButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+changeMainButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Change Main Character", 1, 1, 1)
+    GameTooltip:AddLine("Opens character selection window", 0.7, 0.7, 1)
+    GameTooltip:AddLine("Choose who should receive aura buffs", 1, 0.8, 0.6)
+    GameTooltip:Show()
+end)
+changeMainButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+changeMainButton:SetScript("OnClick", function()
+    mainUI:Hide()
+    inputFrame:Show()
     AdjustFrameHeight()
+end)
+
+-- Show/Hide Tracker Button (rechts neben Change Main)
+local showTrackerButton = CreateFrame("Button", nil, mainUI)
+showTrackerButton:SetSize(80, 18)
+showTrackerButton:SetPoint("BOTTOM", mainUI, "BOTTOM", 90, 8) -- weiter rechts
+showTrackerButton.text = showTrackerButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+showTrackerButton.text:SetPoint("CENTER", showTrackerButton, "CENTER", 0, 0)
+showTrackerButton.text:SetText("Show Tracker")
+showTrackerButton.text:SetTextColor(1, 0.82, 0)
+showTrackerButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+showTrackerButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Mythic Trash Tracker", 1, 1, 1)
+    GameTooltip:AddLine("Toggle visibility of the trash percentage tracker", 0.7, 0.7, 1)
+    GameTooltip:AddLine("Shows progress bars for enemy forces in Mythic dungeons", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Helps track completion percentage for Mythic+ requirements", 0.7, 0.7, 1)
+    GameTooltip:Show()
+end)
+showTrackerButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+local trackerVisible = false
+showTrackerButton:SetScript("OnClick", function()
+    if MythicTrashTracker_ToggleVisibility then
+        MythicTrashTracker_ToggleVisibility()
+        if MythicTrashTracker_IsVisible and MythicTrashTracker_IsVisible() then
+            showTrackerButton.text:SetText("Hide Tracker")
+        else
+            showTrackerButton.text:SetText("Show Tracker")
+        end
+    else
+        local frame = _G["MythicTrashTrackerProgressBarContainer"]
+        if frame then
+            if frame:IsShown() then
+                frame:Hide()
+                showTrackerButton.text:SetText("Show Tracker")
+            else
+                frame:Show()
+                showTrackerButton.text:SetText("Hide Tracker")
+            end
+        else
+            print("MythicTrashTracker not found!")
+        end
+    end
 end)
 
 -- Timer update function
@@ -755,7 +849,7 @@ local function UpdateBars()
     local now = GetTime()
     -- Heroism
     if heroismCastEnd and heroismCastEnd > now then
-        -- Laufzeit läuft (grüner Balken)
+        -- Laufzeit läuft (grüner balken)
         heroismCastBar:Show()
         heroismCastBar:SetMinMaxValues(0, 40)
         heroismCastBar:SetValue(heroismCastEnd - now)
@@ -763,7 +857,7 @@ local function UpdateBars()
         heroismCDBar:SetMinMaxValues(0, 600)
         heroismCDBar:SetValue(heroismCastEnd + 600 - now)
         heroismButton:Disable()
-        heroismUserText:SetText("Heroism: "..(heroismCaster or ""))
+        heroismUserText:SetText(heroismCaster or "")
     elseif heroismCaster and heroismCaster ~= "" and heroismCastEnd and heroismCastEnd + 600 > now then
         -- Cooldown läuft (roter balken)
         heroismCastBar:Hide()
@@ -771,7 +865,7 @@ local function UpdateBars()
         heroismCDBar:SetMinMaxValues(0, 600)
         heroismCDBar:SetValue(heroismCastEnd + 600 - now)
         heroismButton:Enable()
-        heroismUserText:SetText("Heroism: "..heroismCaster)
+        heroismUserText:SetText(heroismCaster)
     else
         -- Kein balken
         if heroismCastBar then heroismCastBar:Hide() end
@@ -785,11 +879,9 @@ local function UpdateBars()
             potionCDBar:Show()
             potionCDBar:SetValue(potionCD - now)
         end
-        if potionCasterText then potionCasterText:SetText(potionCaster or "") end
     else
         if potionButton then potionButton:Enable() end
         if potionCDBar then potionCDBar:Hide() end
-        if potionCasterText then potionCasterText:SetText("") end
     end
     if potionCastEnd and potionCastEnd > now then
         if potionCastBar then
@@ -865,11 +957,12 @@ heroismButton:SetScript("OnClick", function()
         -- Heroism läuft jetzt NEU (immer überschreiben)
         heroismCastEnd = GetTime() + 40 -- 40 Sekunden Laufzeit
         heroismCaster = nextUser
-        heroismUserText:SetText("Heroism: "..nextUser)
+        -- Nur den Namen anzeigen
+        heroismUserText:SetText(nextUser)
         heroismButton:Disable()
-        -- Balken sofort neu anzeigen
+        -- Balken sofort neu anzeigen (fix: immer zeigen und auf vollen Wert setzen)
         heroismCastBar:SetMinMaxValues(0, 40)
-        heroismCastBar:SetValue(0)
+        heroismCastBar:SetValue(40)
         heroismCastBar:Show()
         heroismCDBar:SetMinMaxValues(0, 600)
         heroismCDBar:SetValue(0)
@@ -895,7 +988,7 @@ potionButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 potionButton:SetScript("OnClick", function()
     local potionSpell = "Mythic Endless Assault Potion"
     local sent = false
-    
+
     -- Send to all group members
     if GetNumRaidMembers() > 0 then
         for i = 1, GetNumRaidMembers() do
@@ -1325,7 +1418,8 @@ local function OnEvent(self, event, ...)
             potionCD = 0
             potionCastEnd = 0
             potionCaster = ""
-            potionCDPending = false            -- Hunter-Tracking beim Verlassen der Instanz zurücksetzen
+            potionCDPending = false
+            -- Hunter-Tracking beim Verlassen der Instanz zurücksetzen
             if ResetHunterAnimalCompanionTracking then
                 ResetHunterAnimalCompanionTracking()
             end
@@ -1341,6 +1435,7 @@ local function OnEvent(self, event, ...)
             if MythicHelper_ClearBuffWarning then
                 MythicHelper_ClearBuffWarning()
             end
+            -- Suppress "available only in Raids or Instance" message here!
         end
     end
 end
@@ -1356,7 +1451,8 @@ eventFrame:SetScript("OnEvent", OnEvent)
 -- Slash Command: /mhelper zum Öffnen/Schließen des Addons
 SLASH_MHELPER1 = "/mhelper"
 SLASH_MHELPER2 = "/mh"
-SlashCmdList["MHELPER"] = function(msg)    if msg == "reset" then
+SlashCmdList["MHELPER"] = function(msg)
+    if msg == "reset" then
         ResetHunterAnimalCompanionTracking()
         ResetTankPerkTracking()
         ResetPriestHolyPerkTracking()
@@ -1380,7 +1476,7 @@ SlashCmdList["MHELPER"] = function(msg)    if msg == "reset" then
         ManualSendPriestHolyPerks()
         return
     end
-    
+
     if not CanLoadMythicHelper() then
         print("|cffff5555MythicHelper: Available only in Raids or Instance!|r")
         frame:Hide()
@@ -1496,13 +1592,17 @@ heroismResetButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 heroismResetButton:SetScript("OnClick", function()
     heroismCastEnd = 0
-    heroismCaster = ""    heroismButton:Enable()
+    heroismCaster = ""
+    heroismButton:Enable()
     heroismUserText:SetText("")
+    heroismCastBar:SetMinMaxValues(0, 40)
+    heroismCastBar:SetValue(0)
     heroismCastBar:Hide()
     heroismCDBar:Hide()
 end)
 
-local function OnChatMsgSystem(self, event, msg)    if msg and msg:find("Unknown spell Mythic Heroism") then
+local function OnChatMsgSystem(self, event, msg)
+    if msg and msg:find("Unknown spell Mythic Heroism") then
         heroismQueueIndex = heroismQueueIndex + 1
         if heroismQueueIndex > #heroismQueue then heroismQueueIndex = 1 end
         heroismCastEnd = 0
@@ -1529,6 +1629,8 @@ local f = CreateFrame("Frame")
 f:RegisterEvent("RAID_ROSTER_UPDATE")
 f:RegisterEvent("PARTY_MEMBERS_CHANGED")
 
+
+
 -- Tracking für bereits gesendete Hunter-Animal Companions
 local hunterAnimalCompanionSent = {}
 
@@ -1546,28 +1648,25 @@ local function IsTankClass(unit)
     if not UnitExists(unit) then 
         return false
     end
-    
+
     local _, class = UnitClass(unit)
-    
+
     -- Tank-fähige Klassen: Paladine, Krieger, Todesritter und Druiden
     if class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID" then
         -- Verwende die gleiche Spec-Erkennung wie bei Flask-Verteilung
         local spec = GetSpecForHybrid(unit)
-        
+
         -- Debug: Ausgabe für bessere Diagnostik
-        if unit == "player" then
-            print("DEBUG: My class=" .. class .. ", spec=" .. (spec or "nil"))
-        end
-        
+        -- print("DEBUG: IsTankClass: unit="..unit..", class="..(class or "nil")..", spec="..(spec or "nil"))
+
         -- Spezifische Tank-Spezialisierungen
-        if spec == "Protection" then -- Paladin Protection, Warrior Protection
-            return true
-        elseif class == "DEATHKNIGHT" and spec == "Blood" then
-            return true
-        elseif class == "DRUID" and spec == "Feral" then
+        if (class == "PALADIN" and spec == "Protection") or
+           (class == "WARRIOR" and spec == "Protection") or
+           (class == "DEATHKNIGHT" and spec == "Blood") or
+           (class == "DRUID" and spec == "Feral") then
             return true
         end
-        
+
         -- Fallback: Wenn Spec nicht bestimmbar ist oder für andere Charaktere
         if not spec or spec == "" then
             -- Zusätzliche Prüfung: Ist der Spieler in einer Tank-Rolle?
@@ -1575,7 +1674,7 @@ local function IsTankClass(unit)
             if role == "TANK" then
                 return true
             end
-            
+
             -- Fallback für kleinere Gruppen: Tank-fähige Klassen bekommen Tank Perks
             local groupSize = 0
             if GetNumRaidMembers() > 0 then
@@ -1585,22 +1684,21 @@ local function IsTankClass(unit)
             else
                 groupSize = 1
             end
-            
+
             -- In kleineren Gruppen (≤5) sind Tank-fähige Klassen wahrscheinlich Tanks
             if groupSize <= 5 then
-                print("DEBUG: Small group (" .. groupSize .. "), assuming " .. class .. " is tank")
+                -- print("DEBUG: Small group (" .. groupSize .. "), assuming " .. class .. " is tank")
                 return true
             end
-            
+
             -- In größeren Gruppen: konservativere Annahme
-            -- Paladine und Krieger haben höhere Wahrscheinlichkeit, Tanks zu sein
             if class == "PALADIN" or class == "WARRIOR" then
-                print("DEBUG: Large group, but " .. class .. " likely tank")
+                -- print("DEBUG: Large group, but " .. class .. " likely tank")
                 return true
             end
         end
     end
-    
+
     return false
 end
 
@@ -1612,9 +1710,12 @@ local function UpdateGroupMembersList()
     -- Sammle aktuelle Gruppenmitglieder
     if GetNumRaidMembers() > 0 then
         for i = 1, GetNumRaidMembers() do
+
+            local unit = "raid"..i
             local name = GetRaidRosterInfo(i)
-            if name and name ~= "" then
-                newMembers[name] = true
+            local _, class = UnitClass(unit)
+            if name and class and (class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID") then
+                table.insert(newMembers, name)
                 -- Prüfe ob das ein neues Mitglied ist
                 if not currentGroupMembers[name] then
                     table.insert(joinedMembers, {name = name, unit = "raid"..i})
@@ -1623,30 +1724,32 @@ local function UpdateGroupMembersList()
         end
     elseif GetNumPartyMembers() > 0 then
         for i = 1, GetNumPartyMembers() do
-            local name = UnitName("party"..i)
-            if name and name ~= "" then
-                newMembers[name] = true
+            local unit = "party"..i
+            local name = UnitName(unit)
+            local _, class = UnitClass(unit)
+            if name and class and (class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID") then
+                table.insert(newMembers, name)
                 -- Prüfe ob das ein neues Mitglied ist
                 if not currentGroupMembers[name] then
                     table.insert(joinedMembers, {name = name, unit = "party"..i})
                 end
             end
         end
-        -- Spieler selbst hinzufügen
-        if count <= 10 then
-            local playerName = UnitName("player")
-            if playerName then
-                newMembers[playerName] = true
-                if not currentGroupMembers[playerName] then
-                    table.insert(joinedMembers, {name = playerName, unit = "player"})
-                end
+        -- Spieler selbst prüfen
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        if playerName and playerClass and (playerClass == "PALADIN" or playerClass == "WARRIOR" or playerClass == "DEATHKNIGHT" or playerClass == "DRUID") then
+            table.insert(newMembers, playerName)
+            if not currentGroupMembers[playerName] then
+                table.insert(joinedMembers, {name = playerName, unit = "player"})
             end
         end
     else
-        -- Solo - nur Spieler selbst
+        -- Solo
         local playerName = UnitName("player")
-        if playerName then
-            newMembers[playerName] = true
+        local _, playerClass = UnitClass("player")
+        if playerName and playerClass and (playerClass == "PALADIN" or playerClass == "WARRIOR" or playerClass == "DEATHKNIGHT" or playerClass == "DRUID") then
+            table.insert(newMembers, playerName)
             if not currentGroupMembers[playerName] then
                 table.insert(joinedMembers, {name = playerName, unit = "player"})
             end
@@ -1710,6 +1813,44 @@ f:SetScript("OnEvent", function(self, event, ...)
     UpdateGroupMembersList()
 end)
 
+-- Hilfsfunktion: Gibt alle potenziellen Tanks in der Gruppe zurück
+local function GetPotentialTanks()
+    local tanks = {}
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local unit = "raid"..i
+            local name = GetRaidRosterInfo(i)
+            local _, class = UnitClass(unit)
+            if name and class and (class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID") then
+                table.insert(tanks, name)
+            end
+        end
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local unit = "party"..i
+            local name = UnitName(unit)
+            local _, class = UnitClass(unit)
+            if name and class and (class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID") then
+                table.insert(tanks, name)
+            end
+        end
+        -- Spieler selbst prüfen
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        if playerName and playerClass and (playerClass == "PALADIN" or playerClass == "WARRIOR" or playerClass == "DEATHKNIGHT" or playerClass == "DRUID") then
+            table.insert(tanks, playerName)
+        end
+    else
+        -- Solo
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        if playerName and playerClass and (playerClass == "PALADIN" or playerClass == "WARRIOR" or playerClass == "DEATHKNIGHT" or playerClass == "DRUID") then
+            table.insert(tanks, playerName)
+        end
+    end
+    return tanks
+end
+
 -- Funktion zum automatischen Senden von Animal Companion an einen spezifischen Hunter
 function AutoSendHunterAnimalCompanionToPlayer(name)
     -- Sende nur wenn noch nicht gesendet
@@ -1724,84 +1865,62 @@ function ManualSendHunterAnimalCompanion()
     local hunterCount = 0
     local newHunters = 0
     local alreadySentHunters = 0
-    
-    -- Debug: Gruppenstatus prüfen
-    local raidMembers = GetNumRaidMembers()
-    local partyMembers = GetNumPartyMembers()
-    print("DEBUG: Raid=" .. raidMembers .. ", Party=" .. partyMembers)
-    
+
     -- Funktion zum Senden an einen Hunter (nur wenn noch nicht gesendet)
-    local function SendToHunter(name)
-        print("DEBUG: Checking hunter " .. name)
-        if not hunterAnimalCompanionSent[name] then
-            SendChatMessage("cast 81594", "WHISPER", nil, name)
-            hunterAnimalCompanionSent[name] = true
-            hunterCount = hunterCount + 1
-            newHunters = newHunters + 1
-            print("DEBUG: Sent Animal Companion to " .. name)
-        else
-            hunterCount = hunterCount + 1 -- Zähle trotzdem für Gesamtanzahl
-            alreadySentHunters = alreadySentHunters + 1
-            print("DEBUG: " .. name .. " already has Animal Companion")
-        end
-    end
-    
-    -- Überprüfe Raid-Mitglieder
-    if raidMembers > 0 then
-        print("DEBUG: Checking raid members")
-        for i = 1, raidMembers do
-            local name, _, _, _, class = GetRaidRosterInfo(i)
-            if name and class == "HUNTER" then
-                SendToHunter(name)
+    local function SendToHunter(name, unit)
+        local _, class = UnitClass(unit)
+        if class == "HUNTER" then
+            if not hunterAnimalCompanionSent[name] then
+                SendChatMessage("cast 81594", "WHISPER", nil, name)
+                hunterAnimalCompanionSent[name] = true
+                hunterCount = hunterCount + 1
+                newHunters = newHunters + 1
+            else
+                hunterCount = hunterCount + 1
+                alreadySentHunters = alreadySentHunters + 1
             end
         end
-    -- Überprüfe Party-Mitglieder
-    elseif partyMembers > 0 then
-        print("DEBUG: Checking party members")
-        for i = 1, partyMembers do
+    end
+
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name then
+                SendToHunter(name, "raid"..i)
+            end
+        end
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
             local unit = "party"..i
             local name = UnitName(unit)
-            local _, class = UnitClass(unit)
-            if name and class == "HUNTER" then
-                SendToHunter(name)
+            if name then
+                SendToHunter(name, unit)
             end
         end
-        -- Überprüfe den Spieler selbst
         local playerName = UnitName("player")
-        local _, playerClass = UnitClass("player")
-        print("DEBUG: Checking player - " .. (playerName or "nil") .. " class=" .. (playerClass or "nil"))
-        if playerName and playerClass == "HUNTER" then
-            SendToHunter(playerName)
+        if playerName then
+            SendToHunter(playerName, "player")
         end
     else
-        -- Solo - nur den Spieler selbst prüfen
-        print("DEBUG: Solo mode - checking player")
         local playerName = UnitName("player")
-        local _, playerClass = UnitClass("player")
-        print("DEBUG: Player - " .. (playerName or "nil") .. " class=" .. (playerClass or "nil"))
-        if playerName and playerClass == "HUNTER" then
-            SendToHunter(playerName)
+        if playerName then
+            SendToHunter(playerName, "player")
         end
     end
-    
-    -- Feedback
+
     if hunterCount > 0 then
         if newHunters > 0 then
-            -- UI feedback
             MythicHelper_SetBuffWarning("Manually sent Animal Companion to " .. newHunters .. " Hunter(s)")
-            -- Clear UI feedback after 5 seconds
             DelayedCallback(5, function()
                 MythicHelper_ClearBuffWarning()
             end)
         else
-            -- Alle Hunter haben bereits Animal Companion
             MythicHelper_SetBuffWarning("Animal Companion already active for all " .. hunterCount .. " Hunter(s)")
             DelayedCallback(3, function()
                 MythicHelper_ClearBuffWarning()
             end)
         end
     else
-        -- Keine Hunter gefunden
         MythicHelper_SetBuffWarning("No hunters found in group")
         DelayedCallback(3, function()
             MythicHelper_ClearBuffWarning()
@@ -1809,34 +1928,10 @@ function ManualSendHunterAnimalCompanion()
     end
 end
 
--- Funktion für automatisches Senden (behält den alten Namen für Kompatibilität)
-function AutoSendHunterAnimalCompanion()
-    ManualSendHunterAnimalCompanion()
-end
-
--- Funktion zum automatischen Senden von Tank-Perk an einen spezifischen Tank
-function AutoSendTankPerkToPlayer(name)
-    -- Sende nur wenn noch nicht gesendet
-    if not tankPerkSent[name] then
-        SendChatMessage("cast 81535", "WHISPER", nil, name)
-        tankPerkSent[name] = true
-        
-        -- UI feedback
-        MythicHelper_SetBuffWarning("Auto-sent Tank Perk to " .. name)
-        -- Clear UI feedback after 5 seconds
-        DelayedCallback(5, function()
-            MythicHelper_ClearBuffWarning()
-        end)
-        
-        print("Tank Perk (Shield of Destiny - 81535) sent to " .. name)
-    end
-end
-
--- Funktion zum manuellen Senden von Tank-Perks an alle Tanks
+-- Funktion zum manuellen Senden von Tank-Perk an alle Tanks
 function ManualSendTankPerks()
     local tankCount = 0
     local newTanks = 0
-      -- Funktion zum Senden an einen Tank (nur wenn noch nicht gesendet)
     local function SendToTank(name, unit)
         if IsTankClass(unit) then
             if not tankPerkSent[name] then
@@ -1845,12 +1940,11 @@ function ManualSendTankPerks()
                 tankCount = tankCount + 1
                 newTanks = newTanks + 1
             else
-                tankCount = tankCount + 1 -- Zähle trotzdem für Gesamtanzahl
+                tankCount = tankCount + 1
             end
         end
     end
-    
-    -- Überprüfe Raid-Mitglieder
+
     if GetNumRaidMembers() > 0 then
         for i = 1, GetNumRaidMembers() do
             local name = GetRaidRosterInfo(i)
@@ -1858,7 +1952,6 @@ function ManualSendTankPerks()
                 SendToTank(name, "raid"..i)
             end
         end
-    -- Überprüfe Party-Mitglieder
     elseif GetNumPartyMembers() > 0 then
         for i = 1, GetNumPartyMembers() do
             local unit = "party"..i
@@ -1867,31 +1960,30 @@ function ManualSendTankPerks()
                 SendToTank(name, unit)
             end
         end
-        -- Überprüfe den Spieler selbst
+        local playerName = UnitName("player")
+        if playerName then
+            SendToTank(playerName, "player")
+        end
+    else
         local playerName = UnitName("player")
         if playerName then
             SendToTank(playerName, "player")
         end
     end
-    
-    -- Feedback
+
     if tankCount > 0 then
         if newTanks > 0 then
-            -- UI feedback
             MythicHelper_SetBuffWarning("Manually sent Tank Perks to " .. newTanks .. " new Tank(s)")
-            -- Clear UI feedback after 5 seconds
             DelayedCallback(5, function()
                 MythicHelper_ClearBuffWarning()
             end)
         else
-            -- Alle Tanks haben bereits Perks
             MythicHelper_SetBuffWarning("All " .. tankCount .. " Tank(s) already have perks")
             DelayedCallback(3, function()
                 MythicHelper_ClearBuffWarning()
             end)
         end
     else
-        -- Keine Tanks gefunden
         MythicHelper_SetBuffWarning("No tanks found in group")
         DelayedCallback(3, function()
             MythicHelper_ClearBuffWarning()
@@ -1917,85 +2009,73 @@ function AutoSendPriestHolyToPlayer(name)
     end
 end
 
--- Change Main Button (unten in der Mitte)
-local changeMainButton = CreateFrame("Button", nil, mainUI)
-changeMainButton:SetSize(90, 18)
-changeMainButton:SetPoint("BOTTOM", mainUI, "BOTTOM", 0, 8) -- zentriert
-
--- Add text to change main button
-changeMainButton.text = changeMainButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-changeMainButton.text:SetPoint("CENTER", changeMainButton, "CENTER", 0, 0)
-changeMainButton.text:SetText("Change Main")
-changeMainButton.text:SetTextColor(1, 0.82, 0)
-changeMainButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-
--- Tooltip für Change Main Button
-changeMainButton:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Change Main Character", 1, 1, 1)
-    GameTooltip:AddLine("Opens character selection window", 0.7, 0.7, 1)
-    GameTooltip:AddLine("Choose who should receive aura buffs", 1, 0.8, 0.6)
-    GameTooltip:Show()
-end)
-changeMainButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-changeMainButton:SetScript("OnClick", function()
-    mainUI:Hide()
-    inputFrame:Show()
-    AdjustFrameHeight()
-end)
-
--- Show/Hide Tracker Button (rechts neben Change Main)
-local showTrackerButton = CreateFrame("Button", nil, mainUI)
-showTrackerButton:SetSize(80, 18)
-showTrackerButton:SetPoint("BOTTOM", mainUI, "BOTTOM", 90, 8) -- weiter rechts
-
--- Add text to tracker button
-showTrackerButton.text = showTrackerButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-showTrackerButton.text:SetPoint("CENTER", showTrackerButton, "CENTER", 0, 0)
-showTrackerButton.text:SetText("Show Tracker")
-showTrackerButton.text:SetTextColor(1, 0.82, 0)
-showTrackerButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-
--- Tooltip für Show Tracker Button
-showTrackerButton:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Mythic Trash Tracker", 1, 1, 1)
-    GameTooltip:AddLine("Toggle visibility of the trash percentage tracker", 0.7, 0.7, 1)
-    GameTooltip:AddLine("Shows progress bars for enemy forces in Mythic dungeons", 1, 0.8, 0.6)
-    GameTooltip:AddLine("Helps track completion percentage for Mythic+ requirements", 0.7, 0.7, 1)
-    GameTooltip:Show()
-end)
-showTrackerButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-local trackerVisible = false
-
-showTrackerButton:SetScript("OnClick", function()
-    -- Use the global functions from MythicTrashTracker if available
-    if MythicTrashTracker_ToggleVisibility then
-        MythicTrashTracker_ToggleVisibility()
-        -- Update button text based on current visibility
-        if MythicTrashTracker_IsVisible and MythicTrashTracker_IsVisible() then
-            showTrackerButton.text:SetText("Hide Tracker")
-        else
-            showTrackerButton.text:SetText("Show Tracker")
-        end
-    else
-        -- Fallback: Try to find the progress bar container directly
-        local frame = _G["MythicTrashTrackerProgressBarContainer"]
-        if frame then
-            if frame:IsShown() then
-                frame:Hide()
-                showTrackerButton.text:SetText("Show Tracker")
-            else
-                frame:Show()
-                showTrackerButton.text:SetText("Hide Tracker")
+-- Patch: Tank Perk Button Handler direkt nach Button-Erstellung setzen
+C_Timer.After(0.1, function()
+    for i, btnData in ipairs(utilityButtons) do
+        if btnData.message == "MANUAL_TANK_PERK" then
+            for _, btn in ipairs({mainUI:GetChildren()}) do
+                if btn.text and btn.text.GetText and btn.text:GetText() == btnData.name then
+                    btn:RegisterForClicks("AnyUp")
+                    btn:SetScript("OnClick", function(self, button)
+                        if button == "RightButton" then
+                            local tanks = GetPotentialTanks()
+                            local selectedTank = GetSelectedTank()
+                            local menu = {}
+                            for _, name in ipairs(tanks) do
+                                table.insert(menu, {
+                                    text = name .. (selectedTank == name and " |cff55ff55✓|r" or ""),
+                                    func = function()
+                                        SetSelectedTank(name)
+                                        -- Send perk immediately if not already sent
+                                        if not tankPerkSent[name] then
+                                            SendChatMessage("cast 81535", "WHISPER", nil, name)
+                                            tankPerkSent[name] = true
+                                            MythicHelper_SetBuffWarning("Tank Perk an "..name.." gesendet")
+                                            DelayedCallback(3, MythicHelper_ClearBuffWarning)
+                                        end
+                                    end,
+                                    notCheckable = true
+                                })
+                            end
+                            table.insert(menu, { text = "Keine Auswahl", func = function() SetSelectedTank(nil) end, notCheckable = true })
+                            table.insert(menu, { text = "Schließen", func = function() CloseDropDownMenus() end, notCheckable = true })
+                            if not MythicHelperTankMenuFrame then
+                                MythicHelperTankMenuFrame = CreateFrame("Frame", "MythicHelperTankMenuFrame", UIParent, "UIDropDownMenuTemplate")
+                            end
+                            EasyMenu(menu, MythicHelperTankMenuFrame, "cursor", 0, 0, "MENU")
+                        else -- LeftButton oder andere
+                            local selected = GetSelectedTank()
+                            if selected then
+                                SendChatMessage("cast 81535", "WHISPER", nil, selected)
+                                tankPerkSent[selected] = true
+                                MythicHelper_SetBuffWarning("Tank Perk an "..selected.." gesendet")
+                                DelayedCallback(3, MythicHelper_ClearBuffWarning)
+                            else
+                                ManualSendTankPerks()
+                            end
+                        end
+                    end)
+                end
             end
-        else
-            print("MythicTrashTracker not found!")
         end
     end
 end)
+
+-- Persistent tank selection using SavedVariable
+function GetSelectedTank()
+    if type(MythicHelper_SelectedTank) == "string" and MythicHelper_SelectedTank ~= "" then
+        return MythicHelper_SelectedTank
+    end
+    return nil
+end
+
+function SetSelectedTank(name)
+    if name and name ~= "" then
+        MythicHelper_SelectedTank = name
+    else
+        MythicHelper_SelectedTank = nil
+    end
+end
 
 -- Global functions for buff warning system
 function MythicHelper_SetBuffWarning(text)

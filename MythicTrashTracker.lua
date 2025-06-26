@@ -9,6 +9,10 @@ function DebugPrint(msg)
 end
 
 -- 1. SavedVariables initialisieren (NICHT local!)
+-- ACHTUNG: Damit Fortschritt und Optionen nach /reload oder Logout erhalten bleiben,
+-- muss in der .toc-Datei folgendes stehen:
+-- ## SavedVariables: MythicTrashTrackerDB
+
 MythicTrashTrackerDB = MythicTrashTrackerDB or {}
 
 -- 2. Standard-Optionen
@@ -740,12 +744,27 @@ function InitializeInstanceProgress()
     MyAddon.activeBossList = foundBossList
 
     -- Fortschrittsdaten laden (NACH dem Setzen der Bossliste!)
-    LoadProgressData()
+    if MythicTrashTrackerDB.progress and MythicTrashTrackerDB.progress.bossKills then
+        MyAddon.bossKills = {}
+        for i = 1, #MyAddon.activeBossList do
+            MyAddon.bossKills[i] = MythicTrashTrackerDB.progress.bossKills[i] or 0
+        end
+        MyAddon.currentBossIndex = MythicTrashTrackerDB.progress.currentBossIndex or 1
+        DebugPrint("Fortschrittsdaten geladen: Boss-Kills=" .. table.concat(MyAddon.bossKills, ", ") .. ", BossIndex=" .. MyAddon.currentBossIndex)
+    else
+        -- Initialisiere alle auf 0
+        MyAddon.bossKills = {}
+        for i = 1, #MyAddon.activeBossList do
+            MyAddon.bossKills[i] = 0
+        end
+        MyAddon.currentBossIndex = 1
+    end
 
     DebugPrint("Bossliste für die Instanz geladen: " .. tostring(instanceName))
     for i, boss in ipairs(MyAddon.activeBossList) do
         DebugPrint("Boss " .. i .. ": " .. boss.bossName .. ", Required Kills: " .. boss.requiredKills)
-    end    -- Fortschrittsbalken erstellen und aktualisieren
+    end
+    -- Fortschrittsbalken erstellen und aktualisieren
     CreateBossProgressBars()
     UpdateProgress()
 
@@ -1048,6 +1067,8 @@ saveFrame:SetScript("OnEvent", function()
     for i = 1, #RequiredBuffGroups do
         MythicTrashTrackerDB.buffGroups[i] = OPTIONS.buffGroups[i] or false
     end
+    -- Fortschrittsdaten speichern
+    SaveProgressData()
 end)
 function SaveMythicTrashTrackerOptions()
     MythicTrashTrackerDB.options = {}
