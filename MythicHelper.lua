@@ -989,47 +989,22 @@ potionButton:SetScript("OnClick", function()
     local potionSpell = "Mythic Endless Assault Potion"
     local sent = false
 
-    -- Send to all group members
     if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-            local name = GetRaidRosterInfo(i)
-            if name and name ~= "" then
-                SendChatMessage("u "..potionSpell, "WHISPER", nil, name)
-                sent = true
-            end
-        end
+        SendChatMessage("u "..potionSpell, "RAID")
+        sent = true
     elseif GetNumPartyMembers() > 0 then
-        for i = 1, GetNumPartyMembers() do
-            local name = UnitName("party"..i)
-            if name and name ~= "" then
-                SendChatMessage("u "..potionSpell, "WHISPER", nil, name)
-                sent = true
-            end
-        end
-        -- Send to player as well
-        local playerName = UnitName("player")
-        if playerName then
-            SendChatMessage("u "..potionSpell, "WHISPER", nil, playerName)
-            sent = true
-        end
+        SendChatMessage("u "..potionSpell, "PARTY")
+        sent = true
     else
-        -- Solo
-        local playerName = UnitName("player")
-        if playerName then
-            SendChatMessage("u "..potionSpell, "WHISPER", nil, playerName)
-            sent = true
-        end
+        print("No group members found!")
     end
-    
+
     if sent then
-        print("Mythic Endless Assault Potion sent to all group members.")
-        
+        print("Mythic Endless Assault Potion command sent to group.")
         -- Start timer
         potionCastEnd = GetTime() + 60  -- 60 Sekunden Laufzeit
         potionCD = GetTime() + 180      -- 180 Sekunden Cooldown
         potionCaster = "Group"
-    else
-        print("No group members found!")
     end
 end)
 
@@ -1243,6 +1218,52 @@ spellBlockerButton:SetScript("OnClick", function(self, button)
             end
         else
             print("SpellBlocker addon not loaded or options frame not found!")
+        end
+    end
+end)
+
+-- Focus Button (rechts neben Special)
+local focusButton = CreateFrame("Button", nil, mainUI)
+focusButton:SetSize(buttonWidth, buttonHeight)
+focusButton:SetPoint("TOPLEFT", specialWhisperButton, "TOPRIGHT", colSpacing, 0)
+
+focusButton.icon = focusButton:CreateTexture(nil, "ARTWORK")
+focusButton.icon:SetSize(28, 28)
+focusButton.icon:SetPoint("TOP", focusButton, "TOP", 0, -2)
+focusButton.icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_8") -- Totenkopf
+
+focusButton.text = focusButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+focusButton.text:SetPoint("TOP", focusButton.icon, "BOTTOM", 0, -1)
+focusButton.text:SetText("Focus")
+focusButton.text:SetTextColor(1, 0.2, 0.2)
+
+focusButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+
+focusButton:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Focus on Singletarget", 1, 0, 0) -- Rote Überschrift
+    GameTooltip:AddLine("ATTENTION Bots will attack immediately", 1, 0, 0)
+    GameTooltip:Show()
+end)
+focusButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+focusButton:SetScript("OnClick", function()
+    -- Markiere das aktuelle Target mit Totenkopf
+    SetRaidTarget("target", 8)
+    -- Flüstere allen Gruppenmitgliedern "focus"
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name and name ~= UnitName("player") then
+                SendChatMessage("focus", "WHISPER", nil, name)
+            end
+        end
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local name = UnitName("party"..i)
+            if name and name ~= UnitName("player") then
+                SendChatMessage("focus", "WHISPER", nil, name)
+            end
         end
     end
 end)
