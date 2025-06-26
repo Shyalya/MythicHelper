@@ -1,5 +1,6 @@
 local addonName = ...
 local frame = CreateFrame("Frame", addonName.."Frame", UIParent)
+local addonJustLoaded = true
 frame:SetSize(260, 400) -- Startgröße für Eingabefenster
 frame:SetPoint("CENTER")
 frame:SetMovable(true)
@@ -707,7 +708,7 @@ for i, btnData in ipairs(utilityButtons) do
             GameTooltip:AddLine("Sends Shield of Destiny (81535) to all tanks", 0.7, 0.7, 1)
             GameTooltip:AddLine("Works for: Blood DK, Prot Warrior, Prot Paladin, Feral Druid", 0.8, 0.8, 1)
             GameTooltip:AddLine("Only sends to tanks who haven't received it yet", 1, 0.8, 0.6)
-            GameTooltip:AddLine("|cff00ff00Rechtsklick: Tank manuell auswählen|r", 0.6, 1, 0.6)
+            GameTooltip:AddLine("|cff00ff00Right Klick: add Tank manual |r", 0.6, 1, 0.6)
         elseif btnData.message == "MANUAL_PRIEST_HOLY" then
             GameTooltip:SetText("Priest Holy Form", 1, 1, 1)
             GameTooltip:AddLine("Sends Holy Form (81099) to all priests", 0.7, 0.7, 1)
@@ -881,33 +882,37 @@ end)
 local function UpdateBars()
     local now = GetTime()
     -- Heroism
-    if heroismCastEnd and heroismCastEnd > now then
-    -- Laufzeit läuft (grüner Balken)
-    heroismCastBar:Show()
-    heroismCastBar:SetMinMaxValues(0, 40)
-    heroismCastBar:SetValue(heroismCastEnd - now)
-    heroismCDBar:Show()
-    heroismCDBar:SetMinMaxValues(0, 600)
-    heroismCDBar:SetValue(heroismCastEnd + 600 - now)
-    heroismButton:Disable()
-    heroismUserText:SetText(heroismCaster or "")
-elseif heroismCaster and heroismCaster ~= "" and heroismCastEnd and heroismCastEnd + 600 > now then
-    -- Cooldown läuft (roter Balken)
-    heroismCastBar:Hide()
-    heroismCDBar:Show()
-    heroismCDBar:SetMinMaxValues(0, 600)
-    heroismCDBar:SetValue(heroismCastEnd + 600 - now)
-    heroismButton:Enable()
-    heroismUserText:SetText(heroismCaster)
-else
-    -- Kein Balken, alles zurücksetzen
-    heroismCastBar:Hide()
-    heroismCDBar:Hide()
-    heroismButton:Enable()
-    heroismUserText:SetText("")
-    heroismCastEnd = 0
-    heroismCaster = ""
-end
+    if heroismCastEnd and heroismCastEnd > now and heroismCaster and heroismCaster ~= "" then
+        -- Laufzeit läuft (grüner Balken) UND Cooldown läuft (roter Balken)
+        heroismCastBar:Show()
+        heroismCastBar:SetMinMaxValues(0, 40)
+        heroismCastBar:SetValue(heroismCastEnd - now)
+        heroismCDBar:Show()
+        heroismCDBar:SetMinMaxValues(0, 600)
+        heroismCDBar:SetValue(heroismCastEnd + 600 - now)
+        heroismButton:Disable()
+        heroismUserText:SetText(heroismCaster)
+    elseif heroismCastEnd and heroismCastEnd + 600 > now and heroismCaster and heroismCaster ~= "" then
+        -- Nur Cooldown läuft (roter Balken)
+        heroismCastBar:Hide()
+        heroismCDBar:Show()
+        heroismCDBar:SetMinMaxValues(0, 600)
+        heroismCDBar:SetValue(heroismCastEnd + 600 - now)
+        heroismButton:Enable()
+        heroismUserText:SetText(heroismCaster)
+    else
+        -- Kein Balken, alles zurücksetzen
+        heroismCastBar:Hide()
+        heroismCDBar:Hide()
+        heroismButton:Enable()
+        heroismUserText:SetText("")
+        heroismCastEnd = 0
+        if heroismCaster and heroismCaster ~= "" then
+            heroismUserText:SetText(heroismCaster)
+        else
+            heroismUserText:SetText("")
+        end
+    end
 
     -- Potion
     if potionCD and potionCD > now then
@@ -969,9 +974,20 @@ local function FillHeroismQueue()
             table.insert(heroismQueue, playerName)
         end
     end
-    heroismQueueIndex = 1
+    if type(MythicHelper_HeroismQueue) == "table" and #MythicHelper_HeroismQueue > 0 then
+        heroismQueue = {}
+        for i, v in ipairs(MythicHelper_HeroismQueue) do heroismQueue[i] = v end
+    end
+    if type(MythicHelper_HeroismQueueIndex) == "number" and MythicHelper_HeroismQueueIndex >= 1 and MythicHelper_HeroismQueueIndex <= #heroismQueue then
+        heroismQueueIndex = MythicHelper_HeroismQueueIndex
+    else
+        heroismQueueIndex = 1
+    end
+    if type(MythicHelper_LastHeroismCaster) == "string" and MythicHelper_LastHeroismCaster ~= "" then
+        heroismCaster = MythicHelper_LastHeroismCaster
+        heroismUserText:SetText(heroismCaster)
+    end
 end
-
 -- Tooltip für Heroism Button
 heroismButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -993,7 +1009,7 @@ heroismButton:SetScript("OnClick", function()
         -- Heroism läuft jetzt NEU (immer überschreiben)
         heroismCastEnd = GetTime() + 40 -- 40 Sekunden Laufzeit
         heroismCaster = nextUser
-        -- Balken und Text explizit neu setzen
+        MythicHelper_LastHeroismCaster = nextUser
         heroismUserText:SetText(nextUser)
         heroismButton:Disable()
         heroismCastBar:SetMinMaxValues(0, 40)
@@ -1002,6 +1018,7 @@ heroismButton:SetScript("OnClick", function()
         heroismCDBar:SetMinMaxValues(0, 600)
         heroismCDBar:SetValue(0)
         heroismCDBar:Show()
+        UpdateBars() -- <<--- WICHTIG: UI sofort updaten!
         -- Zum nächsten Spieler in der Queue wechseln
         heroismQueueIndex = heroismQueueIndex + 1
         if heroismQueueIndex > #heroismQueue then heroismQueueIndex = 1 end
@@ -1663,6 +1680,9 @@ local function OnChatMsgSystem(self, event, msg)
     if msg and msg:find("Unknown spell Mythic Heroism") then
         heroismQueueIndex = heroismQueueIndex + 1
         if heroismQueueIndex > #heroismQueue then heroismQueueIndex = 1 end
+        MythicHelper_HeroismQueue = {}
+            for i, v in ipairs(heroismQueue) do MythicHelper_HeroismQueue[i] = v end
+            MythicHelper_HeroismQueueIndex = heroismQueueIndex
         heroismCastEnd = 0
         heroismCaster = ""
         heroismButton:Enable()
@@ -1765,19 +1785,17 @@ end
 local function UpdateGroupMembersList()
     local newMembers = {}
     local joinedMembers = {}
-    
+
     -- Sammle aktuelle Gruppenmitglieder
     if GetNumRaidMembers() > 0 then
         for i = 1, GetNumRaidMembers() do
-
             local unit = "raid"..i
             local name = GetRaidRosterInfo(i)
             local _, class = UnitClass(unit)
             if name and class and (class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID") then
-                table.insert(newMembers, name)
-                -- Prüfe ob das ein neues Mitglied ist
+                newMembers[name] = true
                 if not currentGroupMembers[name] then
-                    table.insert(joinedMembers, {name = name, unit = "raid"..i})
+                    table.insert(joinedMembers, {name = name, unit = unit})
                 end
             end
         end
@@ -1787,10 +1805,9 @@ local function UpdateGroupMembersList()
             local name = UnitName(unit)
             local _, class = UnitClass(unit)
             if name and class and (class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID") then
-                table.insert(newMembers, name)
-                -- Prüfe ob das ein neues Mitglied ist
+                newMembers[name] = true
                 if not currentGroupMembers[name] then
-                    table.insert(joinedMembers, {name = name, unit = "party"..i})
+                    table.insert(joinedMembers, {name = name, unit = unit})
                 end
             end
         end
@@ -1798,7 +1815,7 @@ local function UpdateGroupMembersList()
         local playerName = UnitName("player")
         local _, playerClass = UnitClass("player")
         if playerName and playerClass and (playerClass == "PALADIN" or playerClass == "WARRIOR" or playerClass == "DEATHKNIGHT" or playerClass == "DRUID") then
-            table.insert(newMembers, playerName)
+            newMembers[playerName] = true
             if not currentGroupMembers[playerName] then
                 table.insert(joinedMembers, {name = playerName, unit = "player"})
             end
@@ -1808,13 +1825,19 @@ local function UpdateGroupMembersList()
         local playerName = UnitName("player")
         local _, playerClass = UnitClass("player")
         if playerName and playerClass and (playerClass == "PALADIN" or playerClass == "WARRIOR" or playerClass == "DEATHKNIGHT" or playerClass == "DRUID") then
-            table.insert(newMembers, playerName)
+            newMembers[playerName] = true
             if not currentGroupMembers[playerName] then
                 table.insert(joinedMembers, {name = playerName, unit = "player"})
             end
         end
     end
-      -- Aktualisiere die Liste
+
+    if addonJustLoaded then
+        addonJustLoaded = false
+        currentGroupMembers = newMembers
+        return
+    end
+
     currentGroupMembers = newMembers
       -- Sende Tank-Perks, Hunter Animal Companion und Priest Holy Form nur an neue Mitglieder (mit 5 Sekunden Verzögerung)
     local newHunters = 0

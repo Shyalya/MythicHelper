@@ -2,8 +2,9 @@
 ## Title: MythicHelper
 ## Notes: Ein Addon zum Buffen und Cooldown-Tracking für Mythic Gruppen
 ## Author: Shyalya
-## Version: 0.1
-## SavedVariables: MythicHelperMainName, MythicTrashTrackerDB, MythicHelper_SelectedTank
+## Version: 0.3
+## SavedVariables: MythicHelperMainName, MythicTrashTrackerDB, MythicHelper_SelectedTank, MythicHelper_HeroismQueue, MythicHelper_HeroismQueueIndex
+## SavedVariables: MythicHelper_LastHeroismCaster
 
 MythicHelper.lua
 spellblocker.lua
