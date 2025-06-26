@@ -272,7 +272,6 @@ PALADIN = {
         { id = 47843, name = "Unstable Affliction", tooltip = "Blocks Unstable Affliction" },
         { id = 47855, name = "Drain Life", tooltip = "Blocks Drain Life" },
         { id = 47857, name = "Drain Soul", tooltip = "Blocks Drain Soul" },
-        { id = 18265, name = "Siphon Soul", tooltip = "Blocks Siphon Soul" },
         { id = 5138,  name = "Drain Mana", tooltip = "Blocks Drain Mana" },
 
         -- === DEMONOLOGY SPEC ===
@@ -382,7 +381,6 @@ PALADIN = {
         { id = 3408,  name = "Crippling Poison", tooltip = "Blocks Crippling Poison" },
         { id = 5761,  name = "Mind-numbing Poison", tooltip = "Blocks Mind-numbing Poison" },
         { id = 8679,  name = "Wound Poison", tooltip = "Blocks Wound Poison" },
-        { id = 26969, name = "Anesthetic Poison", tooltip = "Blocks Anesthetic Poison" },
     },HUNTER = {
         -- === BEAST MASTERY SPEC ===
         { id = 0, name = "BEAST_MASTERY_SEPARATOR", tooltip = "Beast Mastery Spec" },

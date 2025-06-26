@@ -140,6 +140,7 @@ local function DelayedCallback(delay, func)
         if elapsed >= delay then
             func()
             self:SetScript("OnUpdate", nil)
+            frame:SetParent(nil) -- entfernt das Frame
         end
     end)
 end
@@ -381,11 +382,11 @@ local function GetSpecForHybrid(unit)
         elseif class == "PRIEST" then
             return "Discipline" -- Standard-Annahme für Priester
         elseif class == "PALADIN" then
-            return "Holy"       -- Standard-Annahme für Paladine
+            return "Protection"       -- Standard-Annahme für Paladine
         elseif class == "DEATHKNIGHT" then
             return "Frost"      -- Standard-Annahme für Death Knights (DPS)
         elseif class == "WARRIOR" then
-            return "Arms"       -- Standard-Annahme für Krieger (DPS)
+            return "Fury"       -- Standard-Annahme für Krieger (DPS)
         end
     end
     
@@ -410,27 +411,27 @@ local function GetFlaskForClass(unit)
     -- Hybridklassen basierend auf Spec
     elseif class == "DRUID" or class == "SHAMAN" or class == "PALADIN" or class == "PRIEST" then
         local spec = GetSpecForHybrid(unit)
-        
+
         -- Caster-Specs
         if spec == "Balance" or spec == "Elemental" or spec == "Shadow" then
             return "Flask of the Frost Wyrm"
-        
+
         -- Melee-DPS-Specs
         elseif spec == "Feral" or spec == "Enhancement" or spec == "Retribution" then
             return "Flask of Endless Rage"
-        
+
         -- Tank-Specs
-        elseif spec == "Protection" then
-            return "Flask of Endless Rage" -- Optional: Tanks
-            
+        elseif spec == "Protection" or spec == "Blood" then
+            return "Flask of Endless Rage" -- Tanks bekommen immer Endless Rage
+
         -- Heiler-Specs oder unbekannt
         else
-            return "Flask of the Frost Wyrm" -- Für Heiler besser
+            return "Flask of the Frost Wyrm"
         end
     end
-    
-    -- Fallback
-    return "Flask of the North"
+
+    -- Fallback für alles andere (auch wenn Spec nil ist)
+    return "Flask of Endless Rage"
 end
 
 local specCache = {}
@@ -621,6 +622,43 @@ potionCastBar:Hide()
 local botUtilsHeader = mainUI:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 botUtilsHeader:SetPoint("TOPLEFT", mainUI, "TOPLEFT", 16 + 2*(buttonWidth+colSpacing), -54)
 botUtilsHeader:SetText("Bot Utilities")
+-- Hilfsfunktion: Gibt alle potenziellen Tanks in der Gruppe zurück
+local function GetPotentialTanks()
+    local tanks = {}
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local unit = "raid"..i
+            local name = GetRaidRosterInfo(i)
+            local _, class = UnitClass(unit)
+            if name and class and (class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID") then
+                table.insert(tanks, name)
+            end
+        end
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local unit = "party"..i
+            local name = UnitName(unit)
+            local _, class = UnitClass(unit)
+            if name and class and (class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID") then
+                table.insert(tanks, name)
+            end
+        end
+        -- Spieler selbst prüfen
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        if playerName and playerClass and (playerClass == "PALADIN" or playerClass == "WARRIOR" or playerClass == "DEATHKNIGHT" or playerClass == "DRUID") then
+            table.insert(tanks, playerName)
+        end
+    else
+        -- Solo
+        local playerName = UnitName("player")
+        local _, playerClass = UnitClass("player")
+        if playerName and playerClass and (playerClass == "PALADIN" or playerClass == "WARRIOR" or playerClass == "DEATHKNIGHT" or playerClass == "DRUID") then
+            table.insert(tanks, playerName)
+        end
+    end
+    return tanks
+end
 
 -- Utility Buttons: In 2 Spalten anordnen (max 4 pro Spalte)
 for i, btnData in ipairs(utilityButtons) do
@@ -641,9 +679,11 @@ for i, btnData in ipairs(utilityButtons) do
     btn.icon:SetSize(28, 28)
     btn.icon:SetPoint("TOP", btn, "TOP", 0, -2)
     btn.icon:SetTexture(btnData.icon)
+    btn:RegisterForClicks("AnyUp")
 
     btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    btn.text:SetPoint("TOP", btn.icon, "BOTTOM", 0, -1)    btn.text:SetText(btnData.name)
+    btn.text:SetPoint("TOP", btn.icon, "BOTTOM", 0, -1)    
+    btn.text:SetText(btnData.name)
     btn.text:SetTextColor(1, 0.82, 0)
 
     btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
@@ -717,37 +757,30 @@ for i, btnData in ipairs(utilityButtons) do
                 local flask = GetFlaskForClass("player")
                 SendChatMessage("u " .. flask, "WHISPER", nil, UnitName("player"))
             end
-        elseif btnData.message == "MANUAL_TANK_PERK" then
-            if button == "RightButton" then
-                -- Dropdown für Tank-Auswahl anzeigen (jetzt mit persistentem Frame und 'cursor')
-                local menu = {}
-                local groupSize = GetNumRaidMembers() > 0 and GetNumRaidMembers() or GetNumPartyMembers()
-                local prefix = GetNumRaidMembers() > 0 and "raid" or "party"
-                if groupSize == 0 then
-                    table.insert(menu, { text = UnitName("player"), func = function()
-                        SendChatMessage("cast 81535", "WHISPER", nil, UnitName("player"))
-                        MythicHelper_SetBuffWarning("Tank Perk an "..UnitName("player").." gesendet")
-                        DelayedCallback(3, MythicHelper_ClearBuffWarning)
-                    end, notCheckable = true })
-                else
-                    for i = 1, groupSize do
-                        local unit = prefix..i
-                        local name = UnitName(unit)
-                        if name and UnitExists(unit) then
-                            table.insert(menu, { text = name, func = function()
-                                SendChatMessage("cast 81535", "WHISPER", nil, name)
-                                MythicHelper_SetBuffWarning("Tank Perk an "..name.." gesendet")
-                                DelayedCallback(3, MythicHelper_ClearBuffWarning)
-                            end, notCheckable = true })
-                        end
-                    end
-                end
-                table.insert(menu, { text = "Schließen", func = function() CloseDropDownMenus() end, notCheckable = true })
-                if not MythicHelperTankMenuFrame then
-                    MythicHelperTankMenuFrame = CreateFrame("Frame", "MythicHelperTankMenuFrame", UIParent, "UIDropDownMenuTemplate")
-                end
-                EasyMenu(menu, MythicHelperTankMenuFrame, "cursor", 0, 0, "MENU")
-            else
+        end    
+        if btnData.message == "MANUAL_TANK_PERK" then
+    if button == "RightButton" then
+        -- Nur potenzielle Tanks anzeigen!
+        local menu = {}
+        local tanks = GetPotentialTanks()
+        local selectedTank = GetSelectedTank()
+            for _, name in ipairs(tanks) do
+                table.insert(menu, {
+                text = name .. (selectedTank == name and " |cff55ff55✓|r" or ""),
+                func = function()
+                 SetSelectedTank(name)
+                MythicHelper_SetBuffWarning("Tank ausgewählt: " .. name)
+                 DelayedCallback(2, MythicHelper_ClearBuffWarning)
+            end,
+        notCheckable = true
+        })
+        end
+        table.insert(menu, { text = "Schließen", func = function() CloseDropDownMenus() end, notCheckable = true })
+        if not MythicHelperTankMenuFrame then
+            MythicHelperTankMenuFrame = CreateFrame("Frame", "MythicHelperTankMenuFrame", UIParent, "UIDropDownMenuTemplate")
+        end
+        EasyMenu(menu, MythicHelperTankMenuFrame, "cursor", 0, 0, "MENU")
+    else
                 local selected = GetSelectedTank()
                 if selected then
                     -- SpellID 81535: Shield of Destiny
@@ -849,30 +882,33 @@ local function UpdateBars()
     local now = GetTime()
     -- Heroism
     if heroismCastEnd and heroismCastEnd > now then
-        -- Laufzeit läuft (grüner balken)
-        heroismCastBar:Show()
-        heroismCastBar:SetMinMaxValues(0, 40)
-        heroismCastBar:SetValue(heroismCastEnd - now)
-        heroismCDBar:Show()
-        heroismCDBar:SetMinMaxValues(0, 600)
-        heroismCDBar:SetValue(heroismCastEnd + 600 - now)
-        heroismButton:Disable()
-        heroismUserText:SetText(heroismCaster or "")
-    elseif heroismCaster and heroismCaster ~= "" and heroismCastEnd and heroismCastEnd + 600 > now then
-        -- Cooldown läuft (roter balken)
-        heroismCastBar:Hide()
-        heroismCDBar:Show()
-        heroismCDBar:SetMinMaxValues(0, 600)
-        heroismCDBar:SetValue(heroismCastEnd + 600 - now)
-        heroismButton:Enable()
-        heroismUserText:SetText(heroismCaster)
-    else
-        -- Kein balken
-        if heroismCastBar then heroismCastBar:Hide() end
-        if heroismCDBar then heroismCDBar:Hide() end
-        if heroismButton then heroismButton:Enable() end
-        if heroismUserText then heroismUserText:SetText("") end
-    end
+    -- Laufzeit läuft (grüner Balken)
+    heroismCastBar:Show()
+    heroismCastBar:SetMinMaxValues(0, 40)
+    heroismCastBar:SetValue(heroismCastEnd - now)
+    heroismCDBar:Show()
+    heroismCDBar:SetMinMaxValues(0, 600)
+    heroismCDBar:SetValue(heroismCastEnd + 600 - now)
+    heroismButton:Disable()
+    heroismUserText:SetText(heroismCaster or "")
+elseif heroismCaster and heroismCaster ~= "" and heroismCastEnd and heroismCastEnd + 600 > now then
+    -- Cooldown läuft (roter Balken)
+    heroismCastBar:Hide()
+    heroismCDBar:Show()
+    heroismCDBar:SetMinMaxValues(0, 600)
+    heroismCDBar:SetValue(heroismCastEnd + 600 - now)
+    heroismButton:Enable()
+    heroismUserText:SetText(heroismCaster)
+else
+    -- Kein Balken, alles zurücksetzen
+    heroismCastBar:Hide()
+    heroismCDBar:Hide()
+    heroismButton:Enable()
+    heroismUserText:SetText("")
+    heroismCastEnd = 0
+    heroismCaster = ""
+end
+
     -- Potion
     if potionCD and potionCD > now then
         if potionCDBar then
@@ -957,10 +993,9 @@ heroismButton:SetScript("OnClick", function()
         -- Heroism läuft jetzt NEU (immer überschreiben)
         heroismCastEnd = GetTime() + 40 -- 40 Sekunden Laufzeit
         heroismCaster = nextUser
-        -- Nur den Namen anzeigen
+        -- Balken und Text explizit neu setzen
         heroismUserText:SetText(nextUser)
         heroismButton:Disable()
-        -- Balken sofort neu anzeigen (fix: immer zeigen und auf vollen Wert setzen)
         heroismCastBar:SetMinMaxValues(0, 40)
         heroismCastBar:SetValue(40)
         heroismCastBar:Show()
@@ -1609,7 +1644,8 @@ heroismResetButton:SetScript("OnEnter", function(self)
     GameTooltip:AddLine("Use if timer is stuck or incorrect", 1, 0.8, 0.6)
     GameTooltip:Show()
 end)
-heroismResetButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+heroismResetButton:SetScript("OnLeave", function() 
+    GameTooltip:Hide() end)
 
 heroismResetButton:SetScript("OnClick", function()
     heroismCastEnd = 0
@@ -1620,6 +1656,7 @@ heroismResetButton:SetScript("OnClick", function()
     heroismCastBar:SetValue(0)
     heroismCastBar:Hide()
     heroismCDBar:Hide()
+    UpdateBars()
 end)
 
 local function OnChatMsgSystem(self, event, msg)
@@ -1632,6 +1669,7 @@ local function OnChatMsgSystem(self, event, msg)
         heroismUserText:SetText("")
         heroismCastBar:Hide()
         heroismCDBar:Hide()
+        UpdateBars()
     end
 end
 
@@ -1782,12 +1820,13 @@ local function UpdateGroupMembersList()
     local newHunters = 0
     local newPriests = 0
     for _, member in ipairs(joinedMembers) do
-        if IsTankClass(member.unit) then
-            -- Tank Perk mit 5 Sekunden Verzögerung senden
-            DelayedCallback(5, function()
-                AutoSendTankPerkToPlayer(member.name)
-            end)
-        end
+    -- Nur noch an den ausgewählten Tank senden!
+    local selectedTank = GetSelectedTank()
+   if selectedTank and member.name == selectedTank and not tankPerkSent[member.name] then
+        DelayedCallback(5, function()
+            AutoSendTankPerkToPlayer(member.name)
+        end)
+    end
         
         -- Prüfe ob es sich um einen neuen Hunter handelt
         local _, class = UnitClass(member.unit)
@@ -1804,8 +1843,7 @@ local function UpdateGroupMembersList()
             end)
             newPriests = newPriests + 1
         end
-    end
-    
+    end    
     -- Feedback für neue Hunter und Priester
     if newHunters > 0 and newPriests > 0 then
         MythicHelper_SetBuffWarning("Will auto-send Animal Companion to " .. newHunters .. " Hunter(s) and Holy Form to " .. newPriests .. " Priest(s) in 5 seconds")
@@ -1834,43 +1872,6 @@ f:SetScript("OnEvent", function(self, event, ...)
     UpdateGroupMembersList()
 end)
 
--- Hilfsfunktion: Gibt alle potenziellen Tanks in der Gruppe zurück
-local function GetPotentialTanks()
-    local tanks = {}
-    if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-            local unit = "raid"..i
-            local name = GetRaidRosterInfo(i)
-            local _, class = UnitClass(unit)
-            if name and class and (class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID") then
-                table.insert(tanks, name)
-            end
-        end
-    elseif GetNumPartyMembers() > 0 then
-        for i = 1, GetNumPartyMembers() do
-            local unit = "party"..i
-            local name = UnitName(unit)
-            local _, class = UnitClass(unit)
-            if name and class and (class == "PALADIN" or class == "WARRIOR" or class == "DEATHKNIGHT" or class == "DRUID") then
-                table.insert(tanks, name)
-            end
-        end
-        -- Spieler selbst prüfen
-        local playerName = UnitName("player")
-        local _, playerClass = UnitClass("player")
-        if playerName and playerClass and (playerClass == "PALADIN" or playerClass == "WARRIOR" or playerClass == "DEATHKNIGHT" or playerClass == "DRUID") then
-            table.insert(tanks, playerName)
-        end
-    else
-        -- Solo
-        local playerName = UnitName("player")
-        local _, playerClass = UnitClass("player")
-        if playerName and playerClass and (playerClass == "PALADIN" or playerClass == "WARRIOR" or playerClass == "DEATHKNIGHT" or playerClass == "DRUID") then
-            table.insert(tanks, playerName)
-        end
-    end
-    return tanks
-end
 
 -- Funktion zum automatischen Senden von Animal Companion an einen spezifischen Hunter
 function AutoSendHunterAnimalCompanionToPlayer(name)
@@ -1946,6 +1947,23 @@ function ManualSendHunterAnimalCompanion()
         DelayedCallback(3, function()
             MythicHelper_ClearBuffWarning()
         end)
+    end
+end
+-- Funktion zum Senden an einen Hunter (nur wenn noch nicht gesendet)
+function AutoSendTankPerkToPlayer(name)
+    -- Sende nur wenn noch nicht gesendet (für automatische Verteilung)
+    if not tankPerkSent[name] then
+        SendChatMessage("cast 81535", "WHISPER", nil, name)
+        tankPerkSent[name] = true
+
+        -- UI feedback
+        MythicHelper_SetBuffWarning("Auto-sent Tank Perk to " .. name)
+        -- Clear UI feedback after 5 seconds
+        DelayedCallback(5, function()
+            MythicHelper_ClearBuffWarning()
+        end)
+
+        print("Tank Perk (81535) sent to " .. name)
     end
 end
 
@@ -2030,57 +2048,6 @@ function AutoSendPriestHolyToPlayer(name)
     end
 end
 
--- Patch: Tank Perk Button Handler direkt nach Button-Erstellung setzen
-C_Timer.After(0.1, function()
-    for i, btnData in ipairs(utilityButtons) do
-        if btnData.message == "MANUAL_TANK_PERK" then
-            for _, btn in ipairs({mainUI:GetChildren()}) do
-                if btn.text and btn.text.GetText and btn.text:GetText() == btnData.name then
-                    btn:RegisterForClicks("AnyUp")
-                    btn:SetScript("OnClick", function(self, button)
-                        if button == "RightButton" then
-                            local tanks = GetPotentialTanks()
-                            local selectedTank = GetSelectedTank()
-                            local menu = {}
-                            for _, name in ipairs(tanks) do
-                                table.insert(menu, {
-                                    text = name .. (selectedTank == name and " |cff55ff55✓|r" or ""),
-                                    func = function()
-                                        SetSelectedTank(name)
-                                        -- Send perk immediately if not already sent
-                                        if not tankPerkSent[name] then
-                                            SendChatMessage("cast 81535", "WHISPER", nil, name)
-                                            tankPerkSent[name] = true
-                                            MythicHelper_SetBuffWarning("Tank Perk an "..name.." gesendet")
-                                            DelayedCallback(3, MythicHelper_ClearBuffWarning)
-                                        end
-                                    end,
-                                    notCheckable = true
-                                })
-                            end
-                            table.insert(menu, { text = "Keine Auswahl", func = function() SetSelectedTank(nil) end, notCheckable = true })
-                            table.insert(menu, { text = "Schließen", func = function() CloseDropDownMenus() end, notCheckable = true })
-                            if not MythicHelperTankMenuFrame then
-                                MythicHelperTankMenuFrame = CreateFrame("Frame", "MythicHelperTankMenuFrame", UIParent, "UIDropDownMenuTemplate")
-                            end
-                            EasyMenu(menu, MythicHelperTankMenuFrame, "cursor", 0, 0, "MENU")
-                        else -- LeftButton oder andere
-                            local selected = GetSelectedTank()
-                            if selected then
-                                SendChatMessage("cast 81535", "WHISPER", nil, selected)
-                                tankPerkSent[selected] = true
-                                MythicHelper_SetBuffWarning("Tank Perk an "..selected.." gesendet")
-                                DelayedCallback(3, MythicHelper_ClearBuffWarning)
-                            else
-                                ManualSendTankPerks()
-                            end
-                        end
-                    end)
-                end
-            end
-        end
-    end
-end)
 
 -- Persistent tank selection using SavedVariable
 function GetSelectedTank()
