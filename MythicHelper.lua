@@ -573,7 +573,7 @@ heroismCastBar:Hide()
 -- Cooldown-Balken (rot) direkt unter dem Laufzeit-Balken
 local heroismCDBar = CreateFrame("StatusBar", nil, heroismButton)
 heroismCDBar:SetSize(barWidth, barHeight)
-heroismCDBar:SetPoint("TOP", heroismButton.text, "BOTTOM", 0, -2)
+heroismCDBar:SetPoint("TOP", heroismCastBar, "BOTTOM", 0, -2)
 heroismCDBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
 heroismCDBar:SetStatusBarColor(1, 0, 0) -- Rot für CD
 heroismCDBar:SetMinMaxValues(0, 600)
@@ -1166,36 +1166,28 @@ specialWhisperButton:SetScript("OnClick", function(self, button)
 
     -- Deine Special-Spells (nur diese IDs werden verschickt)
     local specialSpells = {
-        PALADIN = 31884,      -- Avenging Wrath
-        SHAMAN = 2825,        -- Bloodlust
-        WARRIOR = 1719,       -- Recklessness
-        MAGE = 11129,         -- Combustion
-        PRIEST = 10060,       -- Power Infusion
-        ROGUE = 13750,        -- Adrenaline Rush
-        HUNTER = 3045,        -- Rapid Fire
-        WARLOCK = 47241,      -- Metamorphosis
-        DRUID = 50334,        -- Berserk
-        DEATHKNIGHT = 51271,  -- Unbreakable Armor
-    }
+    PALADIN = 31884,      -- Avenging Wrath
+    SHAMAN = {2825, 32182}, -- Bloodlust & Heroism
+    WARRIOR = 1719,       -- Recklessness
+    MAGE = 11129,         -- Combustion
+    PRIEST = 10060,       -- Power Infusion
+    ROGUE = 13750,        -- Adrenaline Rush
+    HUNTER = 3045,        -- Rapid Fire
+    WARLOCK = 47241,      -- Metamorphosis
+    DRUID = 50334,        -- Berserk
+    DEATHKNIGHT = 51271,  -- Unbreakable Armor
+}
 
     local function SendSpecialSS(name, class)
-        local spellId = specialSpells[class]
-        if spellId then
-            local command = "ss +"..spellId
-            SendChatMessage(command, "WHISPER", nil, name)
-            sentCount = sentCount + 1
+    local spellIds = specialSpells[class]
+    if type(spellIds) == "table" then
+        for _, spellId in ipairs(spellIds) do
+            SendChatMessage("ss +"..spellId, "WHISPER", nil, name)
         end
+    elseif spellIds then
+        SendChatMessage("ss +"..spellIds, "WHISPER", nil, name)
     end
-
-    local function SendClassSpells(name, class)
-        local spells = classWhisperSpells[class]
-        if spells and #spells > 0 then
-            for _, spell in ipairs(spells) do
-                SendChatMessage(spell, "WHISPER", nil, name)
-                sentCount = sentCount + 1
-            end
-        end
-    end
+end
 
     if button == "RightButton" then
         -- RAID
