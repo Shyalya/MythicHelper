@@ -560,24 +560,29 @@ heroismButton.text:SetTextColor(1, 0.82, 0)
 -- Balken unter den Text platzieren:
 local barWidth, barHeight = 28, 8
 
-local heroismCDBar = CreateFrame("StatusBar", nil, heroismButton)
-heroismCDBar:SetSize(barWidth, barHeight)
-heroismCDBar:SetPoint("TOP", heroismButton.text, "BOTTOM", 0, -2) -- <- jetzt unter dem Namen
-heroismCDBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-heroismCDBar:SetStatusBarColor(1, 0, 0) -- Rot für CD
-heroismCDBar:SetMinMaxValues(0, 600)
-heroismCDBar:Hide()
 
+-- Laufzeit-Balken (grün) direkt unter dem Button-Text
 local heroismCastBar = CreateFrame("StatusBar", nil, heroismButton)
 heroismCastBar:SetSize(barWidth, barHeight)
-heroismCastBar:SetPoint("TOP", heroismButton.text, "BOTTOM", 0, -2) -- <- jetzt unter dem Namen
+heroismCastBar:SetPoint("TOP", heroismButton.text, "BOTTOM", 0, -2)
 heroismCastBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
 heroismCastBar:SetStatusBarColor(0, 1, 0) -- Grün für Laufzeit
 heroismCastBar:SetMinMaxValues(0, 40)
 heroismCastBar:Hide()
 
+-- Cooldown-Balken (rot) direkt unter dem Laufzeit-Balken
+local heroismCDBar = CreateFrame("StatusBar", nil, heroismButton)
+heroismCDBar:SetSize(barWidth, barHeight)
+heroismCDBar:SetPoint("TOP", heroismButton.text, "BOTTOM", 0, -2)
+heroismCDBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+heroismCDBar:SetStatusBarColor(1, 0, 0) -- Rot für CD
+heroismCDBar:SetMinMaxValues(0, 600)
+heroismCDBar:Hide()
+
+
+-- Name des Casters ein paar Millimeter weiter nach unten
 local heroismUserText = heroismButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-heroismUserText:SetPoint("TOP", heroismCDBar, "BOTTOM", 0, -2)
+heroismUserText:SetPoint("TOP", heroismCDBar, "BOTTOM", 0, -4)
 heroismUserText:SetText("")
 
 local heroismCasterText = mainUI:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1139,7 +1144,8 @@ specialWhisperButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Squa
 specialWhisperButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText("Special Class Cooldowns", 1, 1, 1)
-    GameTooltip:AddLine("Sends class-specific cooldown spells to all group members:", 0.7, 0.7, 1)
+    GameTooltip:AddLine("Left Click: Sends class-specific cooldown spells to all group members", 0, 1, 0)
+    GameTooltip:AddLine("Right Click: Blocks class-specific cooldown spells for all group members", 1, 0.5, 0)
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("Paladin: Avenging Wrath", 1, 0.8, 0.6)
     GameTooltip:AddLine("Shaman: Bloodlust/Heroism", 1, 0.8, 0.6)
@@ -1154,11 +1160,33 @@ specialWhisperButton:SetScript("OnEnter", function(self)
     GameTooltip:Show()
 end)
 specialWhisperButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-specialWhisperButton:SetScript("OnClick", function()
+specialWhisperButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+specialWhisperButton:SetScript("OnClick", function(self, button)
     local sentCount = 0
-    
-    -- Function to send class-specific spells to a player
+
+    -- Deine Special-Spells (nur diese IDs werden verschickt)
+    local specialSpells = {
+        PALADIN = 31884,      -- Avenging Wrath
+        SHAMAN = 2825,        -- Bloodlust
+        WARRIOR = 1719,       -- Recklessness
+        MAGE = 11129,         -- Combustion
+        PRIEST = 10060,       -- Power Infusion
+        ROGUE = 13750,        -- Adrenaline Rush
+        HUNTER = 3045,        -- Rapid Fire
+        WARLOCK = 47241,      -- Metamorphosis
+        DRUID = 50334,        -- Berserk
+        DEATHKNIGHT = 51271,  -- Unbreakable Armor
+    }
+
+    local function SendSpecialSS(name, class)
+        local spellId = specialSpells[class]
+        if spellId then
+            local command = "ss +"..spellId
+            SendChatMessage(command, "WHISPER", nil, name)
+            sentCount = sentCount + 1
+        end
+    end
+
     local function SendClassSpells(name, class)
         local spells = classWhisperSpells[class]
         if spells and #spells > 0 then
@@ -1168,40 +1196,68 @@ specialWhisperButton:SetScript("OnClick", function()
             end
         end
     end
-    
-    -- Send to raid members
+
+    if button == "RightButton" then
+        -- RAID
+        if GetNumRaidMembers() > 0 then
+            for i = 1, GetNumRaidMembers() do
+                local unit = "raid"..i
+                local name = GetRaidRosterInfo(i)
+                local _, class = UnitClass(unit)
+                if name and class then
+                    SendSpecialSS(name, class)
+                end
+            end
+        -- PARTY
+        elseif GetNumPartyMembers() > 0 then
+            for i = 1, GetNumPartyMembers() do
+                local unit = "party"..i
+                local name = UnitName(unit)
+                local _, class = UnitClass(unit)
+                if name and class then
+                    SendSpecialSS(name, class)
+                end
+            end
+            -- Auch an den Spieler selbst
+            local playerName = UnitName("player")
+            local _, playerClass = UnitClass("player")
+            if playerName and playerClass then
+                SendSpecialSS(playerName, playerClass)
+            end
+        end
+        print("Sent "..sentCount.." special ss +<SpellID> commands.")
+        return
+    end
+
+    -- Linksklick: wie bisher
     if GetNumRaidMembers() > 0 then
-    for i = 1, GetNumRaidMembers() do
-        local unit = "raid"..i
-        local name = GetRaidRosterInfo(i)
-        local _, class = UnitClass(unit)
-        print("DEBUG: name="..tostring(name)..", class="..tostring(class))
-        if name and class then
-            SendClassSpells(name, class)
+        for i = 1, GetNumRaidMembers() do
+            local unit = "raid"..i
+            local name = GetRaidRosterInfo(i)
+            local _, class = UnitClass(unit)
+            if name and class then
+                SendClassSpells(name, class)
+            end
         end
-    end
-elseif GetNumPartyMembers() > 0 then
-    for i = 1, GetNumPartyMembers() do
-        local unit = "party"..i
-        local name = UnitName(unit)
-        local _, class = UnitClass(unit)
-        print("DEBUG: name="..tostring(name)..", class="..tostring(class))
-        if name and class then
-            SendClassSpells(name, class)
+    elseif GetNumPartyMembers() > 0 then
+        for i = 1, GetNumPartyMembers() do
+            local unit = "party"..i
+            local name = UnitName(unit)
+            local _, class = UnitClass(unit)
+            if name and class then
+                SendClassSpells(name, class)
+            end
         end
-    end
-        -- Also send to player
         local playerName = UnitName("player")
-    local _, playerClass = UnitClass("player")
-    print("DEBUG: name="..tostring(playerName)..", class="..tostring(playerClass))
-    if playerName and playerClass then
-        SendClassSpells(playerName, playerClass)
-    end
+        local _, playerClass = UnitClass("player")
+        if playerName and playerClass then
+            SendClassSpells(playerName, playerClass)
+        end
     else
         print("No group found!")
         return
     end
-    
+
     if sentCount > 0 then
         print("Sent " .. sentCount .. " class-specific cooldown spells to group members.")
     else
