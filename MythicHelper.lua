@@ -1100,17 +1100,17 @@ else
 end
 
 -- Mapping: Klasse -> Spellname für Flüstern
-local classWhisperSpells = {
+classWhisperSpells = {
     PALADIN = { "cast Avenging Wrath" },
     SHAMAN = { "cast Bloodlust", "cast Heroism" },
-    WARRIOR = { "cast Death Wish", "cast Recklessness" },
-    MAGE = { "cast Combustion" },
+    WARRIOR = { "cast Death Wish" },
+    MAGE = { "cast Combustion", "cast Arcane Power" },
     PRIEST = { "cast Power Infusion" },
     ROGUE = { "cast Adrenaline Rush" },
     HUNTER = { "cast Rapid Fire" },
     WARLOCK = { "cast Metamorphosis" },
     DRUID = { "cast Berserk" },
-    DEATHKNIGHT = { "cast Unbreakable Armor", "cast Army of the Dead" },
+    DEATHKNIGHT = { "cast Unbreakable Armor" },
 }
 
 -- Special Class Whisper Icon-Button (rechts neben Potion)
@@ -1143,14 +1143,14 @@ specialWhisperButton:SetScript("OnEnter", function(self)
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("Paladin: Avenging Wrath", 1, 0.8, 0.6)
     GameTooltip:AddLine("Shaman: Bloodlust/Heroism", 1, 0.8, 0.6)
-    GameTooltip:AddLine("Warrior: Death Wish/Recklessness", 1, 0.8, 0.6)
-    GameTooltip:AddLine("Mage: Combustion", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Warrior: Death Wish", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Mage: Combustion/Arcane Power", 1, 0.8, 0.6)
     GameTooltip:AddLine("Priest: Power Infusion", 1, 0.8, 0.6)
     GameTooltip:AddLine("Rogue: Adrenaline Rush", 1, 0.8, 0.6)
     GameTooltip:AddLine("Hunter: Rapid Fire", 1, 0.8, 0.6)
     GameTooltip:AddLine("Warlock: Metamorphosis", 1, 0.8, 0.6)
     GameTooltip:AddLine("Druid: Berserk", 1, 0.8, 0.6)
-    GameTooltip:AddLine("Death Knight: Unbreakable Armor/Army", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Death Knight: Unbreakable Armor", 1, 0.8, 0.6)
     GameTooltip:Show()
 end)
 specialWhisperButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1171,28 +1171,32 @@ specialWhisperButton:SetScript("OnClick", function()
     
     -- Send to raid members
     if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-            local name, _, _, _, class = GetRaidRosterInfo(i)
-            if name and class then
-                SendClassSpells(name, class)
-            end
+    for i = 1, GetNumRaidMembers() do
+        local unit = "raid"..i
+        local name = GetRaidRosterInfo(i)
+        local _, class = UnitClass(unit)
+        print("DEBUG: name="..tostring(name)..", class="..tostring(class))
+        if name and class then
+            SendClassSpells(name, class)
         end
-    -- Send to party members
-    elseif GetNumPartyMembers() > 0 then
-        for i = 1, GetNumPartyMembers() do
-            local unit = "party"..i
-            local name = UnitName(unit)
-            local _, class = UnitClass(unit)
-            if name and class then
-                SendClassSpells(name, class)
-            end
+    end
+elseif GetNumPartyMembers() > 0 then
+    for i = 1, GetNumPartyMembers() do
+        local unit = "party"..i
+        local name = UnitName(unit)
+        local _, class = UnitClass(unit)
+        print("DEBUG: name="..tostring(name)..", class="..tostring(class))
+        if name and class then
+            SendClassSpells(name, class)
         end
+    end
         -- Also send to player
         local playerName = UnitName("player")
-        local _, playerClass = UnitClass("player")
-        if playerName and playerClass then
-            SendClassSpells(playerName, playerClass)
-        end
+    local _, playerClass = UnitClass("player")
+    print("DEBUG: name="..tostring(playerName)..", class="..tostring(playerClass))
+    if playerName and playerClass then
+        SendClassSpells(playerName, playerClass)
+    end
     else
         print("No group found!")
         return
