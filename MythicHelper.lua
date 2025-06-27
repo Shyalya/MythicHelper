@@ -1,6 +1,7 @@
 local addonName = ...
 local frame = CreateFrame("Frame", addonName.."Frame", UIParent)
 local addonJustLoaded = true
+MythicHelper_SpecialBlockedSpells = MythicHelper_SpecialBlockedSpells or {}
 frame:SetSize(260, 400) -- Startgröße für Eingabefenster
 frame:SetPoint("CENTER")
 frame:SetMovable(true)
@@ -1168,8 +1169,8 @@ specialWhisperButton:SetScript("OnClick", function(self, button)
     local specialSpells = {
     PALADIN = 31884,      -- Avenging Wrath
     SHAMAN = {2825, 32182}, -- Bloodlust & Heroism
-    WARRIOR = 1719,       -- Recklessness
-    MAGE = 11129,         -- Combustion
+    WARRIOR = {1719, 12292},     -- Recklessness
+    MAGE = {11129, 12042},         -- Combustion, Arcan Power
     PRIEST = 10060,       -- Power Infusion
     ROGUE = 13750,        -- Adrenaline Rush
     HUNTER = 3045,        -- Rapid Fire
@@ -1181,25 +1182,53 @@ specialWhisperButton:SetScript("OnClick", function(self, button)
     local function SendSpecialSS(name, class)
     local spellIds = specialSpells[class]
     if type(spellIds) == "table" then
-        for _, spellId in ipairs(spellIds) do
-            SendChatMessage("ss +"..spellId, "WHISPER", nil, name)
+        -- IDs zu einem String verbinden, getrennt mit Komma
+        local msg = "ss +"
+        for i, spellId in ipairs(spellIds) do
+            if i > 1 then
+                msg = msg .. ","
+            end
+            msg = msg .. spellId
         end
+        print("DEBUG: Sende an "..name..": "..msg)
+        SendChatMessage(msg, "WHISPER", nil, name)
     elseif spellIds then
-        SendChatMessage("ss +"..spellIds, "WHISPER", nil, name)
+        local msg = "ss +"..spellIds
+        print("DEBUG: Sende an "..name..": "..msg)
+        SendChatMessage(msg, "WHISPER", nil, name)
+    end
+end
+
+local function SendClassSpells(name, class)
+    local spells = classWhisperSpells[class]
+    if spells and #spells > 0 then
+        for _, spell in ipairs(spells) do
+            SendChatMessage(spell, "WHISPER", nil, name)
+        end
     end
 end
 
     if button == "RightButton" then
+        -- Leere die Blockliste
+        wipe(MythicHelper_SpecialBlockedSpells)
         -- RAID
-        if GetNumRaidMembers() > 0 then
-            for i = 1, GetNumRaidMembers() do
-                local unit = "raid"..i
-                local name = GetRaidRosterInfo(i)
-                local _, class = UnitClass(unit)
-                if name and class then
-                    SendSpecialSS(name, class)
+         if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            local unit = "raid"..i
+            local name = GetRaidRosterInfo(i)
+            local _, class = UnitClass(unit)
+            if name and class then
+                local spellIds = specialSpells[class]
+                if spellIds then
+                    if type(spellIds) ~= "table" then spellIds = {spellIds} end
+                    MythicHelper_SpecialBlockedSpells[class] = MythicHelper_SpecialBlockedSpells[class] or {}
+                    for _, spellId in ipairs(spellIds) do
+                        MythicHelper_SpecialBlockedSpells[class][spellId] = true
+                    end
                 end
+                SendSpecialSS(name, class)
             end
+        end
         -- PARTY
         elseif GetNumPartyMembers() > 0 then
             for i = 1, GetNumPartyMembers() do

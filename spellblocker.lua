@@ -1116,15 +1116,15 @@ local function CreateSpellIcons(class)
                 btn.spellId = 0  -- Fallback to a safe default
             end
               local function UpdateIcon()
-                if spell and spell.id and SpellBlockerDB and SpellBlockerDB[class] and SpellBlockerDB[class][spell.id] then
-                    -- Blocks spells are grayed out
-                    icon:SetDesaturated(true)
-                    btn:SetAlpha(0.5)
-                else
-                    -- Active spells are colored
-                    icon:SetDesaturated(false)
-                    btn:SetAlpha(1)
-                end
+                local isBlocked = SpellBlockerDB and SpellBlockerDB[class] and SpellBlockerDB[class][spell.id]
+                local isSpecialBlocked = MythicHelper_SpecialBlockedSpells and MythicHelper_SpecialBlockedSpells[class] and MythicHelper_SpecialBlockedSpells[class][spell.id]
+                    if isBlocked or isSpecialBlocked then
+                        icon:SetDesaturated(true)
+                        btn:SetAlpha(0.5)
+                    else
+                        icon:SetDesaturated(false)
+                        btn:SetAlpha(1)
+                    end
             end
             UpdateIcon()
               btn:SetScript("OnEnter", function(self)
@@ -1140,9 +1140,16 @@ local function CreateSpellIcons(class)
                     local name = select(1, GetSpellInfo(self.spellId))
                     GameTooltip:SetText(name or "Unknown Spell", 1, 1, 1)
                 end
-                GameTooltip:Show()
-            end)            btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-              btn:SetScript("OnClick", function(self)
+                -- Spezial-Block-Hinweis ergänzen
+                 local isSpecialBlocked = MythicHelper_SpecialBlockedSpells and MythicHelper_SpecialBlockedSpells[class] and MythicHelper_SpecialBlockedSpells[class][spell.id]
+                    if isSpecialBlocked then
+                        GameTooltip:AddLine("Blocked by Special-Button", 1, 0.2, 0.2)
+                    end
+
+                    GameTooltip:Show()
+            end)            
+            btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            btn:SetScript("OnClick", function(self)
                 if not SpellBlockerDB[class] then SpellBlockerDB[class] = {} end
                 SpellBlockerDB[class][spell.id] = not SpellBlockerDB[class][spell.id]
                 UpdateIcon()
