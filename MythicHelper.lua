@@ -1,7 +1,11 @@
 local addonName = ...
 local frame = CreateFrame("Frame", addonName.."Frame", UIParent)
 local addonJustLoaded = true
+local function DebugPrint(msg) end
 MythicHelper_SpecialBlockedSpells = MythicHelper_SpecialBlockedSpells or {}
+hunterAnimalCompanionSent = hunterAnimalCompanionSent or {}
+priestHolyPerkSent = priestHolyPerkSent or {}
+tankPerkSent = tankPerkSent or {}
 frame:SetSize(260, 400) -- Startgröße für Eingabefenster
 frame:SetPoint("CENTER")
 frame:SetMovable(true)
@@ -397,45 +401,37 @@ end
 
 local function GetFlaskForClass(unit)
     local _, class = UnitClass(unit)
-    
+    if not class then
+        return "Flask of Endless Rage" -- Fallback
+    end
+
     -- Klare Melee/Physische DPS-Klassen
     if class == "WARRIOR" or 
        class == "ROGUE" or 
        class == "HUNTER" or 
        class == "DEATHKNIGHT" then
         return "Flask of Endless Rage"
-    
     -- Klare Caster-Klassen
     elseif class == "MAGE" or 
            class == "WARLOCK" then
         return "Flask of the Frost Wyrm"
-    
     -- Hybridklassen basierend auf Spec
     elseif class == "DRUID" or class == "SHAMAN" or class == "PALADIN" or class == "PRIEST" then
         local spec = GetSpecForHybrid(unit)
-
-        -- Caster-Specs
         if spec == "Balance" or spec == "Elemental" or spec == "Shadow" then
             return "Flask of the Frost Wyrm"
-
-        -- Melee-DPS-Specs
         elseif spec == "Feral" or spec == "Enhancement" or spec == "Retribution" then
             return "Flask of Endless Rage"
-
-        -- Tank-Specs
         elseif spec == "Protection" or spec == "Blood" then
-            return "Flask of Endless Rage" -- Tanks bekommen immer Endless Rage
-
-        -- Heiler-Specs oder unbekannt
+            return "Flask of Endless Rage"
         else
             return "Flask of the Frost Wyrm"
         end
+    else
+        -- Für alle anderen Klassen (z.B. Monk, DemonHunter, Pet, etc.)
+        return "Flask of Endless Rage"
     end
-
-    -- Fallback für alles andere (auch wenn Spec nil ist)
-    return "Flask of Endless Rage"
 end
-
 local specCache = {}
 
 local function GetCachedSpecForUnit(unit)
@@ -1190,11 +1186,11 @@ specialWhisperButton:SetScript("OnClick", function(self, button)
             end
             msg = msg .. spellId
         end
-        print("DEBUG: Sende an "..name..": "..msg)
+        --print("DEBUG: Sende an "..name..": "..msg)
         SendChatMessage(msg, "WHISPER", nil, name)
     elseif spellIds then
         local msg = "ss +"..spellIds
-        print("DEBUG: Sende an "..name..": "..msg)
+        --print("DEBUG: Sende an "..name..": "..msg)
         SendChatMessage(msg, "WHISPER", nil, name)
     end
 end

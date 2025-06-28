@@ -82,16 +82,13 @@ function SaveMythicTrashTrackerOptions()
 end
 -- Liste der Gegner, die ignoriert werden sollen
 local IgnoredEnemies = {
-    "Rabbit",
-    "Squirrel",
-    "Frog",
-    "Chicken",
-    "Rat",
-    "Deer",
-    "Sheep",
-    "Cat",
-    "Dog",
-    "Snake"
+    "Rabbit", "Squirrel", "Frog", "Chicken", "Rat", "Deer", "Sheep", "Cat", "Dog", "Snake",
+    "Small Frog", "Field Mouse", "Lamb", "Cow", "Roach", "Crab", "Toad", "Duck", "Pig",
+    "Totem", "Ward", "Amani Protective Ward", "Amani Healing Ward", "Healing Stream Totem",
+    "Mana Spring Totem", "Fire Nova Totem", "Earthbind Totem", "Stoneclaw Totem", "Windfury Totem",
+    "Strength of Earth Totem", "Grounding Totem", "Searing Totem", "Tremor Totem", "Magma Totem",
+    "Fire Elemental Totem", "Earth Elemental Totem", "Spirit Link Totem", "Stormlash Totem" ,
+    "Hatchling","Amani Dragonhawk Hatchling",
 }
 
 local progressBar, missingBuffText
@@ -910,9 +907,23 @@ end
 local combatFrame = CreateFrame("Frame")
 combatFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 combatFrame:SetScript("OnEvent", function(self, event, ...)
-    -- Manuelles Auslesen der Parameter
-    local timestamp, subEvent, _, _, _, _, _, destGUID, destName = ...
-    ProcessKill(timestamp, subEvent, destGUID, destName)
+    local arg = {...}
+    local subEvent = arg[2]
+    if subEvent == "UNIT_DIED" then
+        local guid, name
+        for i = 1, #arg-1 do
+            if type(arg[i]) == "string" and arg[i]:sub(1,4) == "0xF1" then
+                guid = arg[i]
+                name = arg[i+1]
+                break
+            end
+        end
+        if guid and type(name) == "string" then
+            ProcessKill(arg[1], subEvent, guid, name)
+        else
+            print("Konnte GUID/Name nicht finden:", unpack(arg))
+        end
+    end
 end)
 
 -- 1. Fortschrittsdaten beim Addon-Laden wiederherstellen
@@ -949,15 +960,11 @@ end
 
 -- Kills für den jeweiligen Boss erhöhen
 function ProcessKill(timestamp, subEvent, destGUID, destName)
-    if subEvent ~= "PARTY_KILL" then
-        DebugPrint("Ignoriere SubEvent: " .. tostring(subEvent))
-        return
-    end
-
+    -- Ignoriere bestimmte Gegnernamen (Critter etc.)
     if IgnoredEnemies and destName then
+        local lowerName = destName:lower()
         for _, ignoredName in ipairs(IgnoredEnemies) do
-            if destName == ignoredName then
-                DebugPrint("Ignoriere Gegner: " .. destName)
+            if lowerName:find(ignoredName:lower(), 1, true) then
                 return
             end
         end
@@ -966,11 +973,14 @@ function ProcessKill(timestamp, subEvent, destGUID, destName)
     -- Jeden Balken hochzählen!
     for i = 1, #MyAddon.activeBossList do
         MyAddon.bossKills[i] = (MyAddon.bossKills[i] or 0) + 1
-        DebugPrint("Mob getötet. Boss " .. i .. " Kills: " .. MyAddon.bossKills[i])
     end
 
     SaveProgressData()
     UpdateProgress()
+end
+
+function IsNpcGUID(guid)
+    return type(guid) == "string" and guid:sub(3,5) == "F13"
 end
 
 -- Fortschrittsbalken aktualisieren
