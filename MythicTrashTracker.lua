@@ -1,5 +1,5 @@
 -- MythicTrashTracker.lua
-print("MythicTrashTracker loaded!")
+--print("MythicTrashTracker loaded!")
 DEBUG = false
 
 function DebugPrint(msg)
@@ -78,7 +78,7 @@ function SaveMythicTrashTrackerOptions()
     for i = 1, #RequiredBuffGroups do
         MythicTrashTrackerDB.buffGroups[i] = OPTIONS.buffGroups[i] or false
     end
-    print("|cFF00FF00[MythicTrashTracker]: Optionen wurden gespeichert!")
+    --print("|cFF00FF00[MythicTrashTracker]: Optionen wurden gespeichert!")
 end
 -- Liste der Gegner, die ignoriert werden sollen
 local IgnoredEnemies = {
@@ -295,7 +295,7 @@ end
 function UpdateProgressBarWidth()
     if progressBar then
         progressBar:SetWidth(OPTIONS.progressBarWidth)
-        print("|cFFFFA500[MythicTrashTracker]: Fortschrittsbalken-Breite aktualisiert: " .. OPTIONS.progressBarWidth .. "px.")
+        --print("|cFFFFA500[MythicTrashTracker]: Fortschrittsbalken-Breite aktualisiert: " .. OPTIONS.progressBarWidth .. "px.")
     end
 end
 
@@ -437,7 +437,7 @@ end
     soundCheckboxText:SetText(OPTIONS.language == "de" and "Progress-Sound aktivieren" or "Enable Progress Sound")
     soundCheckbox:SetScript("OnClick", function(self)
         OPTIONS.soundEnabled = self:GetChecked()
-        print("|cFFFFA500[MythicTrashTracker]: " .. (OPTIONS.language == "de" and "Progress-Sound " or "Progress Sound ") .. (OPTIONS.soundEnabled and (OPTIONS.language == "de" and "aktiviert." or "enabled.") or (OPTIONS.language == "de" and "deaktiviert." or "disabled.")))
+        --print("|cFFFFA500[MythicTrashTracker]: " .. (OPTIONS.language == "de" and "Progress-Sound " or "Progress Sound ") .. (OPTIONS.soundEnabled and (OPTIONS.language == "de" and "aktiviert." or "enabled.") or (OPTIONS.language == "de" and "deaktiviert." or "disabled.")))
     end)
 
     -- Sound-Auswahl Dropdown
@@ -453,7 +453,7 @@ end
                 OPTIONS.selectedSound = sound.path
                 UIDropDownMenu_SetText(soundDropdown, sound.name)
                 PlaySoundFile(sound.path, "Master")
-                print("|cFFFFA500[MythicTrashTracker]: " .. (OPTIONS.language == "de" and "Ausgewählter Sound: " or "Selected Sound: ") .. sound.name)
+                --print("|cFFFFA500[MythicTrashTracker]: " .. (OPTIONS.language == "de" and "Ausgewählter Sound: " or "Selected Sound: ") .. sound.name)
             end
             UIDropDownMenu_AddButton(info, level)
         end
@@ -540,7 +540,7 @@ function MythicTrashTracker_CreateDropdownMenu()
                 end
 
                 UpdateBuffGroupButtons()
-                print("|cFFFFA500[MythicTrashTracker]: " .. (OPTIONS.language == "de" and "Alle Buff-Gruppen " or "All Buff Groups ") .. (allEnabled and (OPTIONS.language == "de" and "deaktiviert." or "disabled.") or (OPTIONS.language == "de" and "aktiviert." or "enabled.")))
+                --print("|cFFFFA500[MythicTrashTracker]: " .. (OPTIONS.language == "de" and "Alle Buff-Gruppen " or "All Buff Groups ") .. (allEnabled and (OPTIONS.language == "de" and "deaktiviert." or "disabled.") or (OPTIONS.language == "de" and "aktiviert." or "enabled.")))
                 CloseDropDownMenus()
             end
         },
@@ -574,8 +574,8 @@ function MythicTrashTracker_CreateDropdownMenu()
             func = function()
                 if OpenOptionsWindow then
                     OpenOptionsWindow()
-                else
-                    print("|cFFFF0000[MythicTrashTracker]: " .. (OPTIONS.language == "de" and "OpenOptionsWindow ist nicht definiert." or "OpenOptionsWindow is not defined."))
+                --else
+                    --print("|cFFFF0000[MythicTrashTracker]: " .. (OPTIONS.language == "de" and "OpenOptionsWindow ist nicht definiert." or "OpenOptionsWindow is not defined."))
                 end
                 CloseDropDownMenus()
             end
@@ -866,16 +866,16 @@ function EnableBuffChecker()
             self.timer = 0
         end
     end)
-    print("Buff-Checker aktiviert.")
-    DebugPrint("Buff-Checker aktiviert.")
+    --print("Buff-Checker aktiviert.")
+    --DebugPrint("Buff-Checker aktiviert.")
 end
 
 -- Test-Funktion für manuelle Buff-Prüfung
-function TestBuffCheck()
-    print("=== Manuelle Buff-Prüfung ===")
-    CheckBuffs()
-    print("=== Ende Buff-Prüfung ===")
-end
+--function TestBuffCheck()
+    --print("=== Manuelle Buff-Prüfung ===")
+    --CheckBuffs()
+    --print("=== Ende Buff-Prüfung ===")
+--end
 
 function DisableBuffChecker()
     buffCheckerFrame:SetScript("OnUpdate", nil)
@@ -883,16 +883,16 @@ function DisableBuffChecker()
 end
 
 -- Function to update UI when buff tracking is toggled
-function UpdateBuffTrackingUI()
-    print("[MythicTrashTracker] DEBUG: UpdateBuffTrackingUI called, trackBuffs =", OPTIONS.trackBuffs)
+--function UpdateBuffTrackingUI()
+    --print("[MythicTrashTracker] DEBUG: UpdateBuffTrackingUI called, trackBuffs =", OPTIONS.trackBuffs)
     -- This function can be expanded in the future if UI elements need updating
     -- For now, it just provides feedback
-    if OPTIONS.trackBuffs then
-        print("[MythicTrashTracker] Buff tracking enabled")
-    else
-        print("[MythicTrashTracker] Buff tracking disabled")
-    end
-end
+    --if OPTIONS.trackBuffs then
+    --    print("[MythicTrashTracker] Buff tracking enabled")
+    --else
+    --    print("[MythicTrashTracker] Buff tracking disabled")
+    --end
+--end
 
 -- Initialisierung basierend auf der Option
 if OPTIONS.trackBuffs then
@@ -920,8 +920,8 @@ combatFrame:SetScript("OnEvent", function(self, event, ...)
         end
         if guid and type(name) == "string" then
             ProcessKill(arg[1], subEvent, guid, name)
-        else
-            print("Konnte GUID/Name nicht finden:", unpack(arg))
+        --else
+            --print("Konnte GUID/Name nicht finden:", unpack(arg))
         end
     end
 end)
@@ -1092,7 +1092,7 @@ function SaveMythicTrashTrackerOptions()
     for i = 1, #RequiredBuffGroups do
         MythicTrashTrackerDB.buffGroups[i] = OPTIONS.buffGroups[i] or false
     end
-    print("|cFF00FF00[MythicTrashTracker]: Optionen wurden gespeichert!")
+    --print("|cFF00FF00[MythicTrashTracker]: Optionen wurden gespeichert!")
 end
 
 -- Verzögerte Ausführung (Delay in Sekunden)
