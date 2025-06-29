@@ -595,14 +595,22 @@ end
 -- Hilfsfunktionen (müssen vor ihrer ersten Verwendung definiert werden)
 local function GetBlockedSpellsForClass(class)
     local blockedSpells = {}
-    
-    if not SpellBlockerDB[class] then
-        return blockedSpells
-    end
-      if SPELLS[class] then
+    local already = {}
+
+    -- SpellBlockerDB
+    if SpellBlockerDB[class] then
         for _, spell in ipairs(SPELLS[class]) do
-            if spell.id and spell.id > 0 and SpellBlockerDB[class][spell.id] then  -- Ignoriere Separatoren
+            if spell.id and spell.id > 0 and SpellBlockerDB[class][spell.id] then
                 table.insert(blockedSpells, spell.id)
+                already[spell.id] = true
+            end
+        end
+    end
+    -- SpecialBlockedSpells
+    if MythicHelper_SpecialBlockedSpells and MythicHelper_SpecialBlockedSpells[class] then
+        for spellId in pairs(MythicHelper_SpecialBlockedSpells[class]) do
+            if not already[spellId] then
+                table.insert(blockedSpells, spellId)
             end
         end
     end
@@ -704,18 +712,17 @@ function ResetAllBlockLists()
     local playersByClass = {}
     local numMembers = GetNumRaidMembers()
     local isRaid = (numMembers > 0)
-    
+
     if not isRaid then
         numMembers = GetNumPartyMembers()
     end
-    
+
     -- Verarbeite alle Gruppenmitglieder
     if numMembers > 0 then
         for i = 1, numMembers do
             local unit = isRaid and "raid"..i or "party"..i
             local name = UnitName(unit)
             local _, class = UnitClass(unit)
-            
             if name and class then
                 if not playersByClass[class] then
                     playersByClass[class] = {}
@@ -724,7 +731,7 @@ function ResetAllBlockLists()
             end
         end
     end
-    
+
     -- Eigenen Spieler immer hinzufügen
     local playerName = UnitName("player")
     local _, playerClass = UnitClass("player")
@@ -732,19 +739,19 @@ function ResetAllBlockLists()
         playersByClass[playerClass] = {}
     end
     table.insert(playersByClass[playerClass], playerName)
-    
+
     -- Für jede Klasse einen Reset-Befehl mit einer beispielhaften SpellID senden
     local totalMessages = 0
     for class, players in pairs(playersByClass) do
         -- Finde die erste gültige SpellID für diese Klasse
         local resetSpellId = nil
         for _, spell in ipairs(SPELLS[class]) do
-            if spell.id > 0 then  -- Erste gültige SpellID verwenden
+            if spell.id > 0 then
                 resetSpellId = spell.id
                 break
             end
         end
-        
+
         if resetSpellId then
             local resetCommand = "ss -" .. resetSpellId
             for _, playerName in ipairs(players) do
@@ -753,21 +760,28 @@ function ResetAllBlockLists()
             end
         end
     end
-      -- Status in der DB zurücksetzen (optional)
+
+    -- Status in der DB zurücksetzen (SpellBlockerDB und ggf. SpecialBlockedSpells)
     for className, spells in pairs(SPELLS) do
         if not SpellBlockerDB[className] then
             SpellBlockerDB[className] = {}
         end
         for _, spell in ipairs(spells) do
-            if spell.id > 0 then  -- Nur echte Zauber, keine Separatoren
+            if spell.id > 0 then
                 SpellBlockerDB[className][spell.id] = false
             end
         end
     end
-    
+    -- Auch alle Special-Blocks entfernen, falls vorhanden
+    if MythicHelper_SpecialBlockedSpells then
+        for k in pairs(MythicHelper_SpecialBlockedSpells) do
+            MythicHelper_SpecialBlockedSpells[k] = nil
+        end
+    end
+
     -- UI aktualisieren
     RefreshClassSpellDisplay()
-    
+
     print("|cFF00FF00SpellBlocker:|r " .. totalMessages .. " reset commands sent. All spell blocks removed.")
 end
 
@@ -1150,12 +1164,19 @@ local function CreateSpellIcons(class)
             end)            
             btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
             btn:SetScript("OnClick", function(self)
-                if not SpellBlockerDB[class] then SpellBlockerDB[class] = {} end
-                SpellBlockerDB[class][spell.id] = not SpellBlockerDB[class][spell.id]
-                UpdateIcon()
-                UpdateToggleButton()
-                -- SendBlockCommandsToGroup() removed - now only main button sends to group
-            end)
+    if not SpellBlockerDB[class] then SpellBlockerDB[class] = {} end
+    local newState = not SpellBlockerDB[class][spell.id]
+    SpellBlockerDB[class][spell.id] = newState
+    -- Synchronisiere mit SpecialBlockedSpells
+    MythicHelper_SpecialBlockedSpells[class] = MythicHelper_SpecialBlockedSpells[class] or {}
+    if newState then
+        MythicHelper_SpecialBlockedSpells[class][spell.id] = true
+    else
+        MythicHelper_SpecialBlockedSpells[class][spell.id] = nil
+    end
+    UpdateIcon()
+    UpdateToggleButton()
+end)
               -- Position für nächstes Icon
             currentCol = currentCol + 1
             if currentCol >= iconsPerRow then
