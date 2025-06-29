@@ -88,7 +88,7 @@ local IgnoredEnemies = {
     "Mana Spring Totem", "Fire Nova Totem", "Earthbind Totem", "Stoneclaw Totem", "Windfury Totem",
     "Strength of Earth Totem", "Grounding Totem", "Searing Totem", "Tremor Totem", "Magma Totem",
     "Fire Elemental Totem", "Earth Elemental Totem", "Spirit Link Totem", "Stormlash Totem" ,
-    "Hatchling","Amani Dragonhawk Hatchling",
+    "Hatchling","Amani Dragonhawk Hatchling","Larva"
 }
 
 local progressBar, missingBuffText
