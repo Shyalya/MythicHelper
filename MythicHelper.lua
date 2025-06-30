@@ -1205,6 +1205,7 @@ local function SendClassSpells(name, class)
     if spells and #spells > 0 then
         for _, spell in ipairs(spells) do
             SendChatMessage(spell, "WHISPER", nil, name)
+            sentCount = sentCount + 1 -- <--- HIER HINZUFÜGEN
         end
     end
 end
