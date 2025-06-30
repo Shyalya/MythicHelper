@@ -302,6 +302,7 @@ local function ShowNameButtons()
             btn:SetText(name)
             btn:SetScript("OnClick", function()
                 SetBuffTarget(name)
+                UpdateMainName() 
                 mainUI:Show()
                 inputFrame:Hide()
                 AdjustFrameHeight()
@@ -1424,6 +1425,7 @@ function CreateCombinedDropdownMenu()
                 else
                     frame:Show()
                     AdjustFrameHeight()
+                    UpdateMainName()
                 end
                 CloseDropDownMenus()
             end,
@@ -1641,6 +1643,7 @@ SlashCmdList["MHELPER"] = function(msg)
     else
         frame:Show()
         AdjustFrameHeight()
+        UpdateMainName()
     end
 end
 
@@ -1703,6 +1706,7 @@ minimapButton:SetScript("OnClick", function(self, button)
         else
             frame:Show()
             AdjustFrameHeight()
+            UpdateMainName()
         end
     elseif button == "RightButton" then
         -- Show combined dropdown menu
