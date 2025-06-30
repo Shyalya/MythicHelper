@@ -1175,6 +1175,8 @@ local function CreateSpellIcons(class)
     else
         MythicHelper_SpecialBlockedSpells[class][spell.id] = nil
     end
+    -- HIER speichern:
+    MythicHelper_SpecialBlockedSpellsDB = MythicHelper_SpecialBlockedSpells
     UpdateIcon()
     UpdateToggleButton()
 end)
@@ -1237,16 +1239,24 @@ end)
 
     -- Klick-Handler bleibt gleich
     toggleBtn:SetScript("OnClick", function()
-        local shouldBlock = not AreAllSpellsBlocked(class)        for _, spell in ipairs(SPELLS[class]) do
-            if not SpellBlockerDB[class] then SpellBlockerDB[class] = {} end
-            if spell and spell.id and spell.id > 0 then  -- Ignoriere Separatoren
-                SpellBlockerDB[class][spell.id] = shouldBlock
+    local shouldBlock = not AreAllSpellsBlocked(class)
+    for _, spell in ipairs(SPELLS[class]) do
+        if not SpellBlockerDB[class] then SpellBlockerDB[class] = {} end
+        if spell and spell.id and spell.id > 0 then
+            SpellBlockerDB[class][spell.id] = shouldBlock
+            MythicHelper_SpecialBlockedSpells[class] = MythicHelper_SpecialBlockedSpells[class] or {}
+            if shouldBlock then
+                MythicHelper_SpecialBlockedSpells[class][spell.id] = true
+            else
+                MythicHelper_SpecialBlockedSpells[class][spell.id] = nil
             end
         end
-        CreateSpellIcons(class)
-        UpdateToggleButton()
-        -- SendBlockCommandsToGroup() removed - now only main button sends to group
-    end)
+    end
+    -- HIER speichern:
+    MythicHelper_SpecialBlockedSpellsDB = MythicHelper_SpecialBlockedSpells
+    CreateSpellIcons(class)
+    UpdateToggleButton()
+end)
 end -- End of the CreateSpellIcons function
 
 -- Funktion zum Aktivieren des Heal-Only-Modus für Heilerklassen
