@@ -2,6 +2,8 @@ local addonName = ...
 local frame = CreateFrame("Frame", addonName.."Frame", UIParent)
 local addonJustLoaded = true
 MythicHelper_SpecialBlockedSpells = MythicHelper_SpecialBlockedSpells or {}
+MythicHelper_SpecialBlockedSpellsDB = MythicHelper_SpecialBlockedSpellsDB or {}
+MythicHelper_SpecialBlockedSpells = MythicHelper_SpecialBlockedSpellsDB
 frame:SetSize(260, 400) -- Startgröße für Eingabefenster
 frame:SetPoint("CENTER")
 frame:SetMovable(true)
@@ -1226,6 +1228,7 @@ end
                     for _, spellId in ipairs(spellIds) do
                         MythicHelper_SpecialBlockedSpells[class][spellId] = true
                     end
+                    MythicHelper_SpecialBlockedSpellsDB = MythicHelper_SpecialBlockedSpells
                 end
                 SendSpecialSS(name, class)
             end
