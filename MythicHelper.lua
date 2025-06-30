@@ -1,11 +1,7 @@
 local addonName = ...
 local frame = CreateFrame("Frame", addonName.."Frame", UIParent)
 local addonJustLoaded = true
-local function DebugPrint(msg) end
 MythicHelper_SpecialBlockedSpells = MythicHelper_SpecialBlockedSpells or {}
-hunterAnimalCompanionSent = hunterAnimalCompanionSent or {}
-priestHolyPerkSent = priestHolyPerkSent or {}
-tankPerkSent = tankPerkSent or {}
 frame:SetSize(260, 400) -- Startgröße für Eingabefenster
 frame:SetPoint("CENTER")
 frame:SetMovable(true)
@@ -401,37 +397,45 @@ end
 
 local function GetFlaskForClass(unit)
     local _, class = UnitClass(unit)
-    if not class then
-        return "Flask of Endless Rage" -- Fallback
-    end
-
+    
     -- Klare Melee/Physische DPS-Klassen
     if class == "WARRIOR" or 
        class == "ROGUE" or 
        class == "HUNTER" or 
        class == "DEATHKNIGHT" then
         return "Flask of Endless Rage"
+    
     -- Klare Caster-Klassen
     elseif class == "MAGE" or 
            class == "WARLOCK" then
         return "Flask of the Frost Wyrm"
+    
     -- Hybridklassen basierend auf Spec
     elseif class == "DRUID" or class == "SHAMAN" or class == "PALADIN" or class == "PRIEST" then
         local spec = GetSpecForHybrid(unit)
+
+        -- Caster-Specs
         if spec == "Balance" or spec == "Elemental" or spec == "Shadow" then
             return "Flask of the Frost Wyrm"
+
+        -- Melee-DPS-Specs
         elseif spec == "Feral" or spec == "Enhancement" or spec == "Retribution" then
             return "Flask of Endless Rage"
+
+        -- Tank-Specs
         elseif spec == "Protection" or spec == "Blood" then
-            return "Flask of Endless Rage"
+            return "Flask of Endless Rage" -- Tanks bekommen immer Endless Rage
+
+        -- Heiler-Specs oder unbekannt
         else
             return "Flask of the Frost Wyrm"
         end
-    else
-        -- Für alle anderen Klassen (z.B. Monk, DemonHunter, Pet, etc.)
-        return "Flask of Endless Rage"
     end
+
+    -- Fallback für alles andere (auch wenn Spec nil ist)
+    return "Flask of Endless Rage"
 end
+
 local specCache = {}
 
 local function GetCachedSpecForUnit(unit)
@@ -1112,7 +1116,7 @@ classWhisperSpells = {
     HUNTER = { "cast Rapid Fire" },
     WARLOCK = { "cast Metamorphosis" },
     DRUID = { "cast Berserk" },
-    DEATHKNIGHT = { "cast Unbreakable Armor" },
+    DEATHKNIGHT = { "cast Unbreakable Armor","cast Army of the Dead" },
 }
 
 -- Special Class Whisper Icon-Button (rechts neben Potion)
@@ -1153,7 +1157,7 @@ specialWhisperButton:SetScript("OnEnter", function(self)
     GameTooltip:AddLine("Hunter: Rapid Fire", 1, 0.8, 0.6)
     GameTooltip:AddLine("Warlock: Metamorphosis", 1, 0.8, 0.6)
     GameTooltip:AddLine("Druid: Berserk", 1, 0.8, 0.6)
-    GameTooltip:AddLine("Death Knight: Unbreakable Armor", 1, 0.8, 0.6)
+    GameTooltip:AddLine("Death Knight: Unbreakable Armor/Army", 1, 0.8, 0.6)
     GameTooltip:Show()
 end)
 specialWhisperButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1172,7 +1176,7 @@ specialWhisperButton:SetScript("OnClick", function(self, button)
     HUNTER = 3045,        -- Rapid Fire
     WARLOCK = 47241,      -- Metamorphosis
     DRUID = 50334,        -- Berserk
-    DEATHKNIGHT = 51271,  -- Unbreakable Armor
+    DEATHKNIGHT = {51271,42650}  -- Unbreakable Armor
 }
 
     local function SendSpecialSS(name, class)
@@ -1186,11 +1190,11 @@ specialWhisperButton:SetScript("OnClick", function(self, button)
             end
             msg = msg .. spellId
         end
-        --print("DEBUG: Sende an "..name..": "..msg)
+        print("DEBUG: Sende an "..name..": "..msg)
         SendChatMessage(msg, "WHISPER", nil, name)
     elseif spellIds then
         local msg = "ss +"..spellIds
-        --print("DEBUG: Sende an "..name..": "..msg)
+        print("DEBUG: Sende an "..name..": "..msg)
         SendChatMessage(msg, "WHISPER", nil, name)
     end
 end
@@ -1200,73 +1204,51 @@ local function SendClassSpells(name, class)
     if spells and #spells > 0 then
         for _, spell in ipairs(spells) do
             SendChatMessage(spell, "WHISPER", nil, name)
-            sentCount = sentCount + 1
         end
     end
 end
 
-if button == "RightButton" then
-    -- RAID
-    if GetNumRaidMembers() > 0 then
+    if button == "RightButton" then
+        -- Leere die Blockliste
+        wipe(MythicHelper_SpecialBlockedSpells)
+        -- RAID
+         if GetNumRaidMembers() > 0 then
         for i = 1, GetNumRaidMembers() do
             local unit = "raid"..i
             local name = GetRaidRosterInfo(i)
             local _, class = UnitClass(unit)
             if name and class then
-                -- 1. Hole alle bereits geblockten Spells aus SpellBlocker UND SpecialBlockedSpells
-                -- Beim Senden über den Special-Button (z.B. Rechtsklick)
-local blocked = {}
-
--- 1. Füge SpellBlocker-Blocks hinzu
-if SpellBlockerDB and SpellBlockerDB.blockedSpells and SpellBlockerDB.blockedSpells[class] then
-    for spellId, isBlocked in pairs(SpellBlockerDB.blockedSpells[class]) do
-        if isBlocked then
-            blocked[spellId] = true
-        end
-    end
-end
-
--- 2. Füge SpecialBlockedSpells hinzu
-if MythicHelper_SpecialBlockedSpells and MythicHelper_SpecialBlockedSpells[class] then
-    for spellId in pairs(MythicHelper_SpecialBlockedSpells[class]) do
-        blocked[spellId] = true
-    end
-end
-
--- 3. Füge die neuen Special-Spells hinzu
-local spellIds = specialSpells[class]
-if spellIds then
-    if type(spellIds) ~= "table" then spellIds = {spellIds} end
-    for _, spellId in ipairs(spellIds) do
-        blocked[spellId] = true
-    end
-end
-
--- 4. Schreibe das Ergebnis in beide Tabellen zurück
-SpellBlockerDB.blockedSpells = SpellBlockerDB.blockedSpells or {}
-SpellBlockerDB.blockedSpells[class] = SpellBlockerDB.blockedSpells[class] or {}
-MythicHelper_SpecialBlockedSpells[class] = MythicHelper_SpecialBlockedSpells[class] or {}
-
-for spellId in pairs(blocked) do
-    SpellBlockerDB.blockedSpells[class][spellId] = true
-    MythicHelper_SpecialBlockedSpells[class][spellId] = true
-end
-
--- 5. Sende alle geblockten Spells
-local allBlocked = {}
-for spellId in pairs(blocked) do
-    table.insert(allBlocked, spellId)
-end
-if #allBlocked > 0 then
-    local msg = "ss +" .. table.concat(allBlocked, ",")
-    SendChatMessage(msg, "WHISPER", nil, name)
-end
+                local spellIds = specialSpells[class]
+                if spellIds then
+                    if type(spellIds) ~= "table" then spellIds = {spellIds} end
+                    MythicHelper_SpecialBlockedSpells[class] = MythicHelper_SpecialBlockedSpells[class] or {}
+                    for _, spellId in ipairs(spellIds) do
+                        MythicHelper_SpecialBlockedSpells[class][spellId] = true
+                    end
+                end
+                SendSpecialSS(name, class)
             end
         end
+        -- PARTY
+        elseif GetNumPartyMembers() > 0 then
+            for i = 1, GetNumPartyMembers() do
+                local unit = "party"..i
+                local name = UnitName(unit)
+                local _, class = UnitClass(unit)
+                if name and class then
+                    SendSpecialSS(name, class)
+                end
+            end
+            -- Auch an den Spieler selbst
+            local playerName = UnitName("player")
+            local _, playerClass = UnitClass("player")
+            if playerName and playerClass then
+                SendSpecialSS(playerName, playerClass)
+            end
+        end
+        print("Sent "..sentCount.." special ss +<SpellID> commands.")
+        return
     end
-    print("Sent "..sentCount.." special ss +<SpellID> commands.")
-    return
-end
 
     -- Linksklick: wie bisher
     if GetNumRaidMembers() > 0 then

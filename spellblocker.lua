@@ -174,6 +174,7 @@ PALADIN = {
         { id = 3714,  name = "Path of Frost", tooltip = "Blocks Path of Frost" },
         { id = 50977, name = "Death Gate", tooltip = "Blocks Death Gate" },
         { id = 61999, name = "Raise Ally", tooltip = "Blocks Raise Ally" },
+        { id = 42650, name = "Army of the Dead", tooltip = "Blocks Army of the Dead" },
     },PRIEST = {
         -- === HOLY SPEC ===
         { id = 0, name = "HOLY_SEPARATOR", tooltip = "Holy Spec" },

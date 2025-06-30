@@ -40,18 +40,25 @@ local RequiredBuffGroups = {
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:SetScript("OnEvent", function(self, event, addon)
-    if addon == "MythicTrashTracker" then
+    if addon == "MythicHelper" then
         -- Optionen übernehmen
         if MythicTrashTrackerDB.options then
             for k, v in pairs(MythicTrashTrackerDB.options) do
                 OPTIONS[k] = v
             end
         end
+        -- Standardwerte für fehlende Optionen setzen
+        if OPTIONS.soundEnabled == nil then
+            OPTIONS.soundEnabled = false
+        end
+        if OPTIONS.selectedSound == nil then
+            OPTIONS.selectedSound = "Sound\\Interface\\LevelUp.wav"
+        end
         -- BuffGroups laden (einfache true/false-Liste)
         if MythicTrashTrackerDB.buffGroups then
             OPTIONS.buffGroups = {}
             for i = 1, #RequiredBuffGroups do
-                OPTIONS.buffGroups[i] = MythicTrashTrackerDB.buffGroups[i] or false
+                OPTIONS.buffGroups[i] = MythicTrashTrackerDB.buffGroups[i] and true or false
             end
         end
         -- Falls nach dem Laden keine BuffGroups vorhanden sind, Standard initialisieren
@@ -72,11 +79,6 @@ function SaveMythicTrashTrackerOptions()
         if type(v) ~= "function" and type(v) ~= "userdata" then
             MythicTrashTrackerDB.options[k] = v
         end
-    end
-    -- BuffGroups als vollständige Liste speichern
-    MythicTrashTrackerDB.buffGroups = {}
-    for i = 1, #RequiredBuffGroups do
-        MythicTrashTrackerDB.buffGroups[i] = OPTIONS.buffGroups[i] or false
     end
     --print("|cFF00FF00[MythicTrashTracker]: Optionen wurden gespeichert!")
 end
@@ -208,22 +210,6 @@ function PlayProgressSound()
         DebugPrint("Progress-Sound ist deaktiviert oder kein Sound ausgewählt.")
     end
 end
-local addonLoadedFrame = CreateFrame("Frame")
-addonLoadedFrame:RegisterEvent("ADDON_LOADED")
-addonLoadedFrame:SetScript("OnEvent", function(self, event, addonName)
-    if addonName == "MythicTrashTracker" then
-        DebugPrint("Addon MythicTrashTracker vollständig geladen.")
-
-        -- Überprüfen, ob der Spieler in einer Instanz ist und die Daten geladen werden können
-        if not CheckInstanceAndLoadData() then
-            DebugPrint("AddOn wird nicht geladen, da der Spieler nicht in einer Instanz ist.")
-            return
-        end
-
-        -- Initialisiere die Instanzdaten
-        InitializeInstanceProgress()
-    end
-end)
 
 function CheckInstanceAndLoadData()
     local instanceName, instanceType = GetInstanceInfo()
@@ -436,8 +422,8 @@ end
     soundCheckboxText:SetPoint("LEFT", soundCheckbox, "RIGHT", 5, 0)
     soundCheckboxText:SetText(OPTIONS.language == "de" and "Progress-Sound aktivieren" or "Enable Progress Sound")
     soundCheckbox:SetScript("OnClick", function(self)
-        OPTIONS.soundEnabled = self:GetChecked()
-        --print("|cFFFFA500[MythicTrashTracker]: " .. (OPTIONS.language == "de" and "Progress-Sound " or "Progress Sound ") .. (OPTIONS.soundEnabled and (OPTIONS.language == "de" and "aktiviert." or "enabled.") or (OPTIONS.language == "de" and "deaktiviert." or "disabled.")))
+    OPTIONS.soundEnabled = self:GetChecked() and true or false
+    SaveMythicTrashTrackerOptions()
     end)
 
     -- Sound-Auswahl Dropdown
@@ -1068,8 +1054,8 @@ saveFrame:RegisterEvent("PLAYER_LOGOUT")
 saveFrame:SetScript("OnEvent", function()
     MythicTrashTrackerDB.options = {}
     for k, v in pairs(OPTIONS) do
-        if type(v) ~= "function" and type(v) ~= "userdata" then
-            MythicTrashTrackerDB.options[k] = v
+        if type(v) ~= "function" and type(v) ~= "userdata" and k ~= "buffGroups" then
+        MythicTrashTrackerDB.options[k] = v
         end
     end
     -- BuffGroups als vollständige Liste speichern
@@ -1083,16 +1069,15 @@ end)
 function SaveMythicTrashTrackerOptions()
     MythicTrashTrackerDB.options = {}
     for k, v in pairs(OPTIONS) do
-        if type(v) ~= "function" and type(v) ~= "userdata" then
+        if type(v) ~= "function" and type(v) ~= "userdata" and k ~= "buffGroups" then
             MythicTrashTrackerDB.options[k] = v
         end
     end
-    -- BuffGroups als vollständige Liste speichern
+    -- BuffGroups als vollständige Liste speichern (immer true/false)
     MythicTrashTrackerDB.buffGroups = {}
-    for i = 1, #RequiredBuffGroups do
-        MythicTrashTrackerDB.buffGroups[i] = OPTIONS.buffGroups[i] or false
+    for i = 1, #OPTIONS.buffGroups do
+        MythicTrashTrackerDB.buffGroups[i] = OPTIONS.buffGroups[i] and true or false
     end
-    --print("|cFF00FF00[MythicTrashTracker]: Optionen wurden gespeichert!")
 end
 
 -- Verzögerte Ausführung (Delay in Sekunden)
