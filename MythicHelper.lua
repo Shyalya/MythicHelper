@@ -1211,7 +1211,6 @@ end
 
     if button == "RightButton" then
         -- Leere die Blockliste
-        wipe(MythicHelper_SpecialBlockedSpells)
         -- RAID
          if GetNumRaidMembers() > 0 then
         for i = 1, GetNumRaidMembers() do
