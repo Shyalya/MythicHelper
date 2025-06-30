@@ -1190,11 +1190,11 @@ specialWhisperButton:SetScript("OnClick", function(self, button)
             end
             msg = msg .. spellId
         end
-        print("DEBUG: Sende an "..name..": "..msg)
+        --print("DEBUG: Sende an "..name..": "..msg)
         SendChatMessage(msg, "WHISPER", nil, name)
     elseif spellIds then
         local msg = "ss +"..spellIds
-        print("DEBUG: Sende an "..name..": "..msg)
+        --print("DEBUG: Sende an "..name..": "..msg)
         SendChatMessage(msg, "WHISPER", nil, name)
     end
 end
