@@ -3,6 +3,8 @@ SpellBlockerDB = SpellBlockerDB or {}
 SpellBlockerBlockAllPos = SpellBlockerBlockAllPos or {}
 SpellBlockerLastActiveTab = SpellBlockerLastActiveTab or nil
 SpellBlockerMinimapPos = SpellBlockerMinimapPos or 45  -- Standard-Position bei 45 Grad
+MythicHelper_SpecialBlockedSpellsDB = MythicHelper_SpecialBlockedSpellsDB or {}
+MythicHelper_SpecialBlockedSpells = MythicHelper_SpecialBlockedSpellsDB
 
 local SPELLS = {    WARRIOR = {        -- === ARMS SPEC ===
         { id = 0, name = "ARMS_SEPARATOR", tooltip = "Arms Spec" },
