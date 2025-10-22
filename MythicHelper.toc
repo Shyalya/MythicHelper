@@ -4,7 +4,7 @@
 ## Author: Shyalya
 ## Version: 0.3
 ## SavedVariables: MythicHelperMainName, MythicTrashTrackerDB, MythicHelper_SelectedTank, MythicHelper_HeroismQueue, MythicHelper_HeroismQueueIndex
-## SavedVariables: MythicHelper_LastHeroismCaster
+## SavedVariables: MythicHelper_LastHeroismCaster, MythicHelper_SpecialBlockedSpellsDB
 
 MythicHelper.lua
 spellblocker.lua

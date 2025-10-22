@@ -93,7 +93,7 @@ local IgnoredEnemies = {
     "Hatchling","Amani Dragonhawk Hatchling","Larva"
 }
 
-local progressBar, missingBuffText
+local progressBar, missingBuffText, timerFrame, timerText, timerButton, timerRunning, timerElapsed, timerUpdateFrame
 local MyAddon = MyAddon or {}
 MyAddon.cumulativeKills = 0
 MyAddon.totalRequiredKills = 0
@@ -244,12 +244,45 @@ end
 local instanceChangeFrame = CreateFrame("Frame")
 instanceChangeFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 instanceChangeFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+
+-- Merke letzte Instanz, damit Subzone-Wechsel nicht zu Re-Initialisierung führen
+local lastInstanceName, lastInstanceType = nil, nil
+
 instanceChangeFrame:SetScript("OnEvent", function(self, event, ...)
     DebugPrint("Event ausgelöst: " .. event)
-    if CheckInstanceAndLoadData() then
-        InitializeInstanceProgress()
+
+    local function doCheck()
+        local instanceName, instanceType = GetInstanceInfo()
+        DebugPrint("Aktuelle Instanz: " .. tostring(instanceName) .. ", Typ: " .. tostring(instanceType))
+
+        -- Wenn derzeit nicht in einer Instanz -> nur zurücksetzen, wenn wir vorher in einer Instanz waren
+        if instanceType ~= "party" and instanceType ~= "raid" then
+            if lastInstanceType == "party" or lastInstanceType == "raid" then
+                DebugPrint("Verlasse Instanz: Fortschritt wird zurückgesetzt.")
+                ResetProgressBars()
+            end
+            lastInstanceName, lastInstanceType = nil, instanceType
+            return
+        end
+
+        -- Wenn in einer Instanz: nur neu initialisieren, wenn Instanzname oder -typ sich geändert hat
+        if lastInstanceName ~= instanceName or lastInstanceType ~= instanceType or not MyAddon.activeBossList or #MyAddon.activeBossList == 0 then
+            DebugPrint("Neue Instanz erkannt oder vorher keine Bossliste: " .. tostring(instanceName))
+            if CheckInstanceAndLoadData() then
+                InitializeInstanceProgress()
+            end
+        else
+            DebugPrint("Gleiche Instanz (vermeide Re-Initialisierung).")
+        end
+
+        lastInstanceName, lastInstanceType = instanceName, instanceType
+    end
+
+    -- Bei Zonenwechseln kurz warten, damit GetInstanceInfo stabile Werte liefert
+    if event == "ZONE_CHANGED_NEW_AREA" then
+        DelayedExecution(0.6, doCheck) -- bei Bedarf Delay erhöhen (z.B. 1.0)
     else
-        ResetProgressBars()
+        doCheck()
     end
 end)
 
@@ -587,7 +620,7 @@ local progressBarContainer -- Container-Frame für die Gruppe
 function CreateProgressBarGroup()
     if not progressBarContainer then
         progressBarContainer = CreateFrame("Frame", "MythicTrashTrackerProgressBarContainer", UIParent)
-        progressBarContainer:SetSize(200, 20) -- Standardgröße
+        progressBarContainer:SetSize(OPTIONS.progressBarWidth, 100) -- Höhe wird später dynamisch angepasst
         progressBarContainer:SetPoint("CENTER", UIParent, "CENTER", 0, 50)
         progressBarContainer:SetMovable(true)
         progressBarContainer:EnableMouse(true)
@@ -612,8 +645,62 @@ function CreateProgressBarGroup()
         missingBuffText:SetPoint("BOTTOM", progressBarContainer, "TOP", 0, 10)
         missingBuffText:SetText("")
         missingBuffText:SetTextColor(1, 0, 0, 1) -- Rot
-        missingBuffText:Show() -- Sicherstellen, dass der Text sichtbar ist
+        missingBuffText:Show()
         DebugPrint("MissingBuffText an progressBarContainer gebunden.")
+        
+        -- Timer (innerhalb des Containers) + Start/Stop-Button
+        -- Restore timer state from DB if vorhanden
+        local dbTimer = (MythicTrashTrackerDB and MythicTrashTrackerDB.timer) or {}
+        timerElapsed = dbTimer.elapsed or 0
+        timerRunning = dbTimer.running or false
+
+        timerText = progressBarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        -- Timer INS Fenster, über dem Button platzieren
+        timerText:SetPoint("BOTTOM", progressBarContainer, "BOTTOM", 0, 40) -- ↑ weiter nach oben
+        timerText:SetText(string.format("%02d:%02d", math.floor(timerElapsed/60), math.floor(timerElapsed%60)))
+        if timerRunning then
+            timerText:Show()
+        else
+            timerText:Hide()
+        end
+
+        timerButton = CreateFrame("Button", nil, progressBarContainer, "UIPanelButtonTemplate")
+        timerButton:SetSize(80, 22)
+        -- Button weiter unten, aber noch INS Fenster
+        timerButton:SetPoint("BOTTOM", progressBarContainer, "BOTTOM", 0, 10) -- ↓ weiter nach unten
+        timerButton:SetText(timerRunning and (OPTIONS.language == "de" and "Stopp" or "Stop") or (OPTIONS.language == "de" and "Start" or "Start"))
+        timerButton:SetScript("OnClick", function(self, btn)
+            if btn == "LeftButton" then
+                if not timerRunning then
+                    timerRunning = true
+                    timerText:Show()
+                    timerButton:SetText(OPTIONS.language == "de" and "Stopp" or "Stop")
+                else
+                    timerRunning = false
+                    timerButton:SetText(OPTIONS.language == "de" and "Start" or "Start")
+                end
+                SaveTimerData()
+            elseif btn == "RightButton" then
+                timerRunning = false
+                timerElapsed = 0
+                timerText:SetText("00:00")
+                timerText:Hide()
+                timerButton:SetText(OPTIONS.language == "de" and "Start" or "Start")
+                SaveTimerData()
+            end
+        end)
+        timerButton:RegisterForClicks("LeftButtonUp","RightButtonUp")
+
+        -- Update-Frame für Timer
+        timerUpdateFrame = CreateFrame("Frame", nil, progressBarContainer)
+        timerUpdateFrame:SetScript("OnUpdate", function(self, elapsed)
+            if timerRunning then
+                timerElapsed = timerElapsed + elapsed
+                local minutes = math.floor(timerElapsed / 60)
+                local seconds = math.floor(timerElapsed % 60)
+                timerText:SetText(string.format("%02d:%02d", minutes, seconds))
+            end
+        end)
         
         -- Tracker standardmäßig verstecken (wird über MythicHelper-Button gesteuert)
         progressBarContainer:Hide()
@@ -663,19 +750,27 @@ end
 
 function UpdateProgressBarGroupSize()
     if progressBarContainer then
+        -- Mehr Platz am unteren Ende für Timer/Text + Button reservieren
+        local extraPadding = 72 -- erhöht, verhindert Überlappung bei vielen Balken
+        local barSpacing = 5
+        local numBars = #progressBarGroup
+        local computedHeight = math.max(OPTIONS.progressBarHeight + extraPadding, numBars * (OPTIONS.progressBarHeight + barSpacing) + extraPadding)
+
         -- Größe des Containers anpassen
         progressBarContainer:SetWidth(OPTIONS.progressBarWidth)
-        progressBarContainer:SetHeight(#progressBarGroup * (OPTIONS.progressBarHeight + 5))
+        progressBarContainer:SetHeight(computedHeight)
 
-        -- Größe der einzelnen Balken anpassen
+        -- Größe und Position der einzelnen Balken anpassen (oben beginnend)
         for i, bar in ipairs(progressBarGroup) do
             bar:SetWidth(OPTIONS.progressBarWidth)
             bar:SetHeight(OPTIONS.progressBarHeight)
             bar:ClearAllPoints()
-            bar:SetPoint("TOP", progressBarContainer, "TOP", 0, -(i - 1) * (OPTIONS.progressBarHeight + 5))
+            -- Starte etwas weiter unten von der Oberkante, damit genug Top/Bottom-Padding bleibt
+            local yOffset = -10 - (i - 1) * (OPTIONS.progressBarHeight + barSpacing)
+            bar:SetPoint("TOP", progressBarContainer, "TOP", 0, yOffset)
         end
 
-        DebugPrint("Fortschrittsbalken-Gruppe aktualisiert: Breite = " .. OPTIONS.progressBarWidth .. ", Höhe = " .. OPTIONS.progressBarHeight)
+        DebugPrint("Fortschrittsbalken-Gruppe aktualisiert: Breite = " .. OPTIONS.progressBarWidth .. ", Höhe = " .. OPTIONS.progressBarHeight .. ", ContainerHeight = " .. computedHeight)
     end
 end
 
@@ -944,6 +1039,15 @@ function SaveProgressData()
     DebugPrint("Fortschrittsdaten gespeichert.")
 end
 
+-- Neue Funktion: Timerdaten speichern
+function SaveTimerData()
+    MythicTrashTrackerDB.timer = {
+        elapsed = timerElapsed or 0,
+        running = timerRunning and true or false,
+    }
+    DebugPrint("Timerdaten gespeichert: elapsed=" .. tostring(MythicTrashTrackerDB.timer.elapsed) .. ", running=" .. tostring(MythicTrashTrackerDB.timer.running))
+end
+
 -- Kills für den jeweiligen Boss erhöhen
 function ProcessKill(timestamp, subEvent, destGUID, destName)
     -- Ignoriere bestimmte Gegnernamen (Critter etc.)
@@ -1065,20 +1169,9 @@ saveFrame:SetScript("OnEvent", function()
     end
     -- Fortschrittsdaten speichern
     SaveProgressData()
+    -- Timer speichern
+    SaveTimerData()
 end)
-function SaveMythicTrashTrackerOptions()
-    MythicTrashTrackerDB.options = {}
-    for k, v in pairs(OPTIONS) do
-        if type(v) ~= "function" and type(v) ~= "userdata" and k ~= "buffGroups" then
-            MythicTrashTrackerDB.options[k] = v
-        end
-    end
-    -- BuffGroups als vollständige Liste speichern (immer true/false)
-    MythicTrashTrackerDB.buffGroups = {}
-    for i = 1, #OPTIONS.buffGroups do
-        MythicTrashTrackerDB.buffGroups[i] = OPTIONS.buffGroups[i] and true or false
-    end
-end
 
 -- Verzögerte Ausführung (Delay in Sekunden)
 function DelayedExecution(delay, func)
