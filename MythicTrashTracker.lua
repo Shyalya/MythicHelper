@@ -102,6 +102,7 @@ MyAddon.totalRequiredKills = 0
 MyAddon.activeBossList = {}
 MyAddon.currentBossIndex = 1
 local isInInstance = false -- Status: Spieler in Instanz
+local tankPerkSent = false -- Neue Variable für Tank-Perk Tracking
 
 -- Globale Optionen erweitern
 --if not OPTIONS.buffGroups then
@@ -257,7 +258,12 @@ local ulduarSubzones = {
     ["The Observation Ring"] = true,
     ["The Colossal Forge"] = true,
     ["The Conservatory of Life"] = true,
-    ["The Prison of Yogg-Saron"] = true
+    ["The Prison of Yogg-Saron"] = true,
+    ["Formation Grounds"] = true,    -- Neue Zone
+    ["Razorscale's Aerie"] = true,  -- Neue Zone
+    ["The Antechamber"] = true,     -- Sicherheitshalber auch diese
+    ["The Spark of Imagination"] = true, -- Und diese
+    ["The Descent into Madness"] = true  -- Und diese
 }
 
 -- Neue ICC Subzonen hinzufügen
@@ -291,38 +297,47 @@ instanceChangeFrame:SetScript("OnEvent", function(self, event, ...)
     local function doCheck()
         local iName, iType, _, _, _, _, _, iID = GetInstanceInfo()
         local currentZone = GetSubZoneText() or iName
-        DebugPrint("Zone Check: " .. tostring(currentZone) .. " in " .. tostring(iName))
         
-        -- Prüfe erst ob wir in einer bekannten Instanz/Subzone sind
-        if isInstanceSubzone(iName, currentZone) and lastInstanceID then
-            DebugPrint("In bekannter Instanz/Subzone - behalte Tracking bei")
-            return
-        end
-
-        -- Normale Instanz-Prüfung
+        -- Prüfe erst ob wir überhaupt in einer Instanz sind
         local inInstance = (iType == "party" or iType == "raid") and (iID and iID ~= 0)
         if not inInstance then
+            -- Wenn wir vorher in einer Instanz waren, reset durchführen
             if lastInstanceID and lastInstanceID ~= 0 then
-                DebugPrint("Instanz wirklich verlassen -> Reset")
+                DebugPrint("Instanz verlassen -> Reset wird durchgeführt")
                 ResetProgressBars()
                 lastInstanceName, lastInstanceType, lastInstanceID = nil, nil, nil
             end
             return
         end
 
-        -- Nur initialisieren wenn neue Instanz oder keine aktive Bossliste
-        if lastInstanceID ~= iID or not MyAddon.activeBossList or #MyAddon.activeBossList == 0 then
-            DebugPrint("Neue Instanz erkannt oder keine Bossliste -> Initialisiere")
-            if CheckInstanceAndLoadData() then
-                InitializeInstanceProgress()
-                lastInstanceName, lastInstanceType, lastInstanceID = iName, iType, iID
+        -- Wenn wir hier sind, sind wir in einer Instanz
+        -- Prüfe ob wir in einer bekannten Instanz (Ulduar/ICC) sind
+        if iName == "Ulduar" then
+            if ulduarSubzones[currentZone] then
+                DebugPrint("Bekannte Ulduar Subzone - behalte Status")
+                return -- Behalte aktuellen Status bei
+            end
+        elseif iName == "Icecrown Citadel" then
+            if iccSubzones[currentZone] then
+                DebugPrint("Bekannte ICC Subzone - behalte Status")
+                return -- Behalte aktuellen Status bei
             end
         end
+
+        -- Wenn wir eine neue Instanz betreten oder noch keine Bossliste haben
+        if lastInstanceID ~= iID or not MyAddon.activeBossList or #MyAddon.activeBossList == 0 then
+            DebugPrint("Neue Instanz oder keine Bossliste -> Initialisiere")
+            if CheckInstanceAndLoadData() then
+                InitializeInstanceProgress()
+            end
+        end
+
+        lastInstanceName, lastInstanceType, lastInstanceID = iName, iType, iID
     end
 
-    -- Längeres Delay für Zonenwechsel
+    -- Längeres Delay bei Zonenwechseln
     if event == "ZONE_CHANGED_NEW_AREA" then
-        DelayedExecution(1.2, doCheck)
+        DelayedExecution(1.5, doCheck)
     else
         doCheck()
     end
@@ -841,16 +856,7 @@ function InitializeInstanceProgress()
         return
     end
 
-    -- Normale Instanz-Prüfung
-    local inInstance = (instanceType == "party" or instanceType == "raid")
-    if not inInstance then
-        if progressBarContainer then
-            progressBarContainer:Hide()
-        end
-        return
-    end
-
-    -- Rest der Funktion bleibt gleich...
+    -- Rest der bestehenden Logik...
     local foundBossList = nil
 
     if instanceType == "party" and InstanceDungeonsData then
@@ -878,12 +884,8 @@ function InitializeInstanceProgress()
     -- Instanzdaten laden
     MyAddon.activeBossList = foundBossList
 
-    -- Fortschrittsdaten zurücksetzen für neue Instanz
-    MyAddon.bossKills = {}
-    for i = 1, #MyAddon.activeBossList do
-        MyAddon.bossKills[i] = 0
-    end
-    MyAddon.currentBossIndex = 1
+    -- WICHTIG: Hier LoadProgressData aufrufen statt Fortschrittsdaten zurückzusetzen
+    LoadProgressData()
 
     -- Fortschrittsbalken erstellen und aktualisieren
     CreateBossProgressBars()
@@ -1149,17 +1151,28 @@ end
 function ResetProgressBars()
     DebugPrint("Fortschrittsbalken und Daten werden zurückgesetzt.")
 
-    -- Bestehender Reset-Code...
+    -- Bestehende Balken zurücksetzen
+    for i, bar in ipairs(progressBarGroup) do
+        bar:Hide()
+        bar:ClearAllPoints()
+        bar:SetParent(nil)
+    end
+    wipe(progressBarGroup)  -- Leere die Balken-Tabelle
 
+    -- Container verstecken
     if progressBarContainer then
         progressBarContainer:Hide()
     end
     
+    -- Alle Daten zurücksetzen
     MyAddon.bossKills = {}
     MyAddon.activeBossList = {}
     MyAddon.currentBossIndex = 1
-
-    -- ...rest of existing code...
+    
+    -- Gespeicherte Daten löschen
+    MythicTrashTrackerDB.progress = nil
+    
+    DebugPrint("Fortschrittsbalken und Daten erfolgreich zurückgesetzt.")
 end
 
 --------------------------------------------------------------------------------
