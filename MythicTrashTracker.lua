@@ -297,42 +297,37 @@ instanceChangeFrame:SetScript("OnEvent", function(self, event, ...)
     local function doCheck()
         local iName, iType, _, _, _, _, _, iID = GetInstanceInfo()
         local currentZone = GetSubZoneText() or iName
-        
-        -- Prüfe erst ob wir überhaupt in einer Instanz sind
+        DebugPrint("Zone Check: " .. tostring(currentZone) .. " in " .. tostring(iName))
+
+        -- Prüfe ob wir überhaupt in einer Instanz sind
         local inInstance = (iType == "party" or iType == "raid") and (iID and iID ~= 0)
+        
+        -- Wenn wir nicht in einer Instanz sind und vorher in einer waren -> Reset
         if not inInstance then
-            -- Wenn wir vorher in einer Instanz waren, reset durchführen
-            if lastInstanceID and lastInstanceID ~= 0 then
-                DebugPrint("Instanz verlassen -> Reset wird durchgeführt")
-                ResetProgressBars()
-                lastInstanceName, lastInstanceType, lastInstanceID = nil, nil, nil
-            end
+            DebugPrint("Nicht in Instanz - Reset wird durchgeführt")
+            ResetProgressBars()
+            lastInstanceName, lastInstanceType, lastInstanceID = nil, nil, nil
             return
         end
 
-        -- Wenn wir hier sind, sind wir in einer Instanz
-        -- Prüfe ob wir in einer bekannten Instanz (Ulduar/ICC) sind
+        -- Ab hier sind wir in einer Instanz
+        -- Prüfe ob wir in Ulduar sind
         if iName == "Ulduar" then
-            if ulduarSubzones[currentZone] then
-                DebugPrint("Bekannte Ulduar Subzone - behalte Status")
-                return -- Behalte aktuellen Status bei
-            end
-        elseif iName == "Icecrown Citadel" then
-            if iccSubzones[currentZone] then
-                DebugPrint("Bekannte ICC Subzone - behalte Status")
-                return -- Behalte aktuellen Status bei
+            -- Wenn wir schon eine aktive Bossliste haben, behalte sie
+            if MyAddon.activeBossList and #MyAddon.activeBossList > 0 then
+                DebugPrint("In Ulduar - behalte aktuelle Bossliste")
+                return
             end
         end
 
-        -- Wenn wir eine neue Instanz betreten oder noch keine Bossliste haben
+        -- Nur initialisieren wenn neue Instanz oder keine Bossliste
         if lastInstanceID ~= iID or not MyAddon.activeBossList or #MyAddon.activeBossList == 0 then
             DebugPrint("Neue Instanz oder keine Bossliste -> Initialisiere")
             if CheckInstanceAndLoadData() then
                 InitializeInstanceProgress()
+                lastInstanceName, lastInstanceType, lastInstanceID = iName, iType, iID
             end
         end
-
-        lastInstanceName, lastInstanceType, lastInstanceID = iName, iType, iID
     end
 
     -- Längeres Delay bei Zonenwechseln
@@ -846,27 +841,9 @@ function InitializeInstanceProgress()
         return
     end
 
-    -- Wenn bereits eine Bossliste existiert und wir in einer Subzone sind, nicht neu initialisieren
-    if MyAddon.activeBossList and #MyAddon.activeBossList > 0 and isInstanceSubzone(instanceName, GetSubZoneText()) then
-        DebugPrint("Behalte existierende Bossliste bei")
-        -- Container NUR zeigen wenn explizit aktiviert
-        if progressBarContainer and MythicTrashTrackerDB.showTracker then
-            progressBarContainer:Show()
-        end
-        return
-    end
-
-    -- Rest der bestehenden Logik...
+    -- Bossliste und Balken erstellen
     local foundBossList = nil
-
-    if instanceType == "party" and InstanceDungeonsData then
-        for key, bossList in pairs(InstanceDungeonsData) do
-            if string.find(instanceName, key, 1, true) then
-                foundBossList = bossList
-                break
-            end
-        end
-    elseif instanceType == "raid" and InstanceRaidsData then
+    if instanceType == "raid" and InstanceRaidsData then
         for key, bossList in pairs(InstanceRaidsData) do
             if string.find(instanceName, key, 1, true) then
                 foundBossList = bossList
@@ -876,29 +853,34 @@ function InitializeInstanceProgress()
     end
 
     if not foundBossList then
-        DebugPrint("Keine Instanzdaten für die Instanz gefunden: " .. tostring(instanceName))
-        MyAddon.activeBossList = {}
+        DebugPrint("Keine Instanzdaten gefunden für: " .. tostring(instanceName))
         return
     end
 
     -- Instanzdaten laden
     MyAddon.activeBossList = foundBossList
 
-    -- WICHTIG: Hier LoadProgressData aufrufen statt Fortschrittsdaten zurückzusetzen
-    LoadProgressData()
+    -- Fortschrittsdaten laden oder initialisieren
+    if not MyAddon.bossKills then
+        MyAddon.bossKills = {}
+        for i = 1, #MyAddon.activeBossList do
+            MyAddon.bossKills[i] = 0
+        end
+    end
 
-    -- Fortschrittsbalken erstellen und aktualisieren
+    -- Fortschrittsbalken erstellen
     CreateBossProgressBars()
     UpdateProgress()
 
-    -- Container NUR zeigen wenn explizit aktiviert
-    if #MyAddon.activeBossList > 0 and progressBarContainer then
+    -- Wichtig: Container nur anzeigen wenn showTracker aktiv ist
+    if progressBarContainer then
         if MythicTrashTrackerDB.showTracker then
             progressBarContainer:Show()
+            DebugPrint("Tracker wird angezeigt (showTracker ist aktiv)")
         else
             progressBarContainer:Hide()
+            DebugPrint("Tracker bleibt versteckt (showTracker ist inaktiv)")
         end
-        DebugPrint("Fortschrittsbalken für neue Instanz erstellt")
     end
 end
 
